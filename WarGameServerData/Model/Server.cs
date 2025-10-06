@@ -14,6 +14,7 @@ public class Server
         while (!ct.IsCancellationRequested)
         {
             await Task.Delay(1000, ct);
+            TimeStamp = DateTime.Now;
         }
     }
 }
