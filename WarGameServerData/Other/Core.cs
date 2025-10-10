@@ -2,6 +2,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using WarGameServerData.Data;
 using WarGameServerData.Model;
 
 namespace WarGameServerData.Other;
@@ -27,6 +28,7 @@ internal class Core
             .ConfigureServices((_, services) =>
             {
                 services.AddSingleton<Server>();
+                services.AddSingleton<StaticObjects>();
             })
             .ConfigureLogging(builder =>
             {
@@ -40,6 +42,7 @@ internal class Core
             })
             .Build();
 
+        IoC.Services.GetRequiredService<StaticObjects>().StartAsync();
         IoC.Services.GetRequiredService<Server>().StartAsync();
     }
 }

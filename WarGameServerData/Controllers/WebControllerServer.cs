@@ -2,6 +2,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using WarGameServerData.Data;
 using WarGameServerData.Model;
 using WarGameServerData.Other;
 
@@ -28,4 +29,5 @@ public class WebControllerServer : ControllerBase
 public class ServerCheck
 {
     public long Time { get; set; } = Core.IoC.Services.GetRequiredService<Server>().TimeStamp.Ticks;
+    public long TimeStampStaticObjects { get; set; } = Core.IoC.Services.GetRequiredService<StaticObjects>().TimeStamp.Ticks;
 }

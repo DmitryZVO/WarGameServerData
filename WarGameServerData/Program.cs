@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using WarGameServerData.Data;
 using WarGameServerData.Model;
 using WarGameServerData.Other;
 
@@ -21,4 +22,6 @@ var serv = Core.IoC.Services.GetRequiredService<Server>();
 
 Core.IoC.Services.GetRequiredService<ILogger<Core>>().Log(LogLevel.Information, $"WarGame Server Data v{serv.Version.ToStringF2()} [{serv.VersionString}] START!");
 host.Run();
+
+await Core.IoC.Services.GetRequiredService<StaticObjects>().SaveAsync();
 Core.IoC.Services.GetRequiredService<ILogger<Core>>().Log(LogLevel.Information, $"WarGame Server Data v{serv.Version.ToStringF2()} [{serv.VersionString}] STOP!");
