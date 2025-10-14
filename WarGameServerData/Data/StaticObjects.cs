@@ -13,7 +13,7 @@ public class StaticObjects
     public DateTime TimeStamp { get; set; } = DateTime.Now;
     public List<StaticObject> Items { get; set; } = new();
 
-    private int _counter = 1;
+    //private int _counter = 1;
 
     public async void StartAsync(CancellationToken ct = default)
     {
@@ -67,13 +67,13 @@ public class StaticObjects
                 }
                 catch
                 {
-                    continue;
+                    //
                 }
             }
         }
         sqlite.Close();
         TimeStamp = DateTime.Now;
-        _counter = Items.Count>0 ? Items.Max(x => x.Id) + 1 : 1;
+        //_counter = Items.Count>0 ? Items.Max(x => x.Id) + 1 : 1;
         WriteLog(LogLevel.Information, $"staticObj.db3 загружен! записей={countAll:0}");
         return true;
     }
