@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Data.SQLite;
+using System.Drawing;
+using System.Text;
 using WarGameServerData.Controllers;
 using WarGameServerData.Other;
 
@@ -35,8 +37,7 @@ public class StaticObjects
         cmd.CommandText = "CREATE TABLE IF NOT EXISTS Items( " +
                           "id INTEGER NOT NULL, " +
                           "type INTEGER NOT NULL, " +
-                          "lonX REAL NOT NULL, " +
-                          "latY REAL NOT NULL, " +
+                          "coords TEXT NOT NULL, " +
                           "visible INTEGER NOT NULL, " +
                           "name TEXT NOT NULL); ";
         cmd.ExecuteNonQuery();
@@ -51,16 +52,14 @@ public class StaticObjects
                 {
                     var id = (int)(long)reader["id"];
                     var type = (int)(long)reader["type"];
-                    var lonX = (double)reader["lonX"];
-                    var latY = (double)reader["latY"];
+                    var coords = (string)reader["coords"];
                     var visible = (long)reader["visible"] == 1;
                     var name = (string)reader["name"];
-                    Items.Add(new StaticObject()
+                    Items.Add(new StaticObject
                     {
                         Id = id,
                         Type = type,
-                        LonX = lonX,
-                        LatY = latY,
+                        Coords = StaticObject.StringToCoords(coords),
                         Visible = visible,
                         Name = name,
                     });
@@ -99,20 +98,18 @@ public class StaticObjects
             cmd.CommandText = "CREATE TABLE IF NOT EXISTS Items( " +
                               "id INTEGER NOT NULL, " +
                               "type INTEGER NOT NULL, " +
-                              "lonX REAL NOT NULL, " +
-                              "latY REAL NOT NULL, " +
+                              "coords TEXT NOT NULL, " +
                               "visible INTEGER NOT NULL, " +
                               "name TEXT NOT NULL); DELETE FROM Items; ";
             cmd.ExecuteNonQuery();
             foreach (var item in Items)
             {
                 cmd.CommandText = "INSERT INTO Items " +
-                                  "(id, type, lonX, latY, visible, name) " +
-                                  "VALUES (:id, :type, :lonX, :latY, :visible, :name); ";
+                                  "(id, type, coords, visible, name) " +
+                                  "VALUES (:id, :type, :coords, :visible, :name); ";
                 cmd.Parameters.AddWithValue("id", item.Id);
                 cmd.Parameters.AddWithValue("type", item.Type);
-                cmd.Parameters.AddWithValue("lonX", item.LonX);
-                cmd.Parameters.AddWithValue("latY", item.LatY);
+                cmd.Parameters.AddWithValue("coords", StaticObject.CoordsToString(item.Coords));
                 cmd.Parameters.AddWithValue("visible", item.Visible ? 1 : 0);
                 cmd.Parameters.AddWithValue("name", item.Name);
                 cmd.ExecuteNonQuery();
@@ -140,10 +137,61 @@ public class StaticObjects
 
 public class StaticObject
 {
-    public int Id { get; set; } // Номер объекта
-    public int Type { get; set; } // Тип объекта
-    public double LonX { get; set; }
-    public double LatY { get; set; }
+    // Номер объекта
+    public int Id { get; set; }
+    // Тип объекта:
+    // 0 - город
+    // 1 - точка интереса (флажок)
+    // 10 - полигон (разрешенная рабочая область)
+    // 11 - полигон (запрещенная рабочая область)
+    public int Type { get; set; }
+    // Точки объекта
+    public List<PointF> Coords { get; set; } = new(); 
+    //Видимость на карте
     public bool Visible { get; set; }
+    //Текстовое имя
     public string Name { get; set; } = string.Empty;
+
+    public static string CoordsToString(List<PointF> coords)
+    {
+        var sb = new StringBuilder();
+        foreach (var c in coords)
+        {
+            sb.Append($"{c.X.ToStringF6()}, {c.Y.ToStringF6()}, ");
+        }
+        return sb.ToString();
+    }
+    public static List<PointF> StringToCoords(string text)
+    {
+        var ret = new List<PointF>();
+        var ss = text.Split(", ");
+        var n = 0;
+        do
+        {
+            if (ss[n].Equals(string.Empty)) break;
+
+            var x = 0.0f;
+            var y = 0.0f;
+            try
+            {
+                x = float.Parse(ss[n].Replace(".",","));
+            }
+            catch
+            {
+                //
+            }
+
+            try
+            {
+                y = float.Parse(ss[n + 1].Replace(".", ","));
+            }
+            catch
+            {
+                //
+            }
+            ret.Add(new PointF(x, y));
+            n += 2;
+        } while (n < ss.Length);
+        return ret;
+    }
 }
