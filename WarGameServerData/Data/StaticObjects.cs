@@ -10,22 +10,22 @@ namespace WarGameServerData.Data;
 
 public class StaticObjects
 {
-    public DateTime TimeStamp { get; set; } = DateTime.Now;
+    public long TimeStamp { get; set; } = DateTime.Now.Ticks;
     public List<StaticObject> Items { get; set; } = new();
 
     //private int _counter = 1;
 
     public async void StartAsync(CancellationToken ct = default)
     {
-        await LoadAsync();
+        await LoadAsync(ct);
     }
 
-    public async Task<bool> LoadAsync()
+    public async Task<bool> LoadAsync(CancellationToken ct = default)
     {
         var sqlite = new SQLiteConnection($@"Data Source={Directory.GetCurrentDirectory()}\DB\staticObj.db3;Version=3;");
         try
         {
-            sqlite.Open();
+            await sqlite.OpenAsync(ct);
         }
         catch // БД не существует!
         {
@@ -40,7 +40,7 @@ public class StaticObjects
                           "coords TEXT NOT NULL, " +
                           "visible INTEGER NOT NULL, " +
                           "name TEXT NOT NULL); ";
-        cmd.ExecuteNonQuery();
+        await cmd.ExecuteNonQueryAsync(ct);
 
         cmd.CommandText = "SELECT * FROM Items";
         var countAll = 0;
@@ -71,8 +71,8 @@ public class StaticObjects
                 }
             }
         }
-        sqlite.Close();
-        TimeStamp = DateTime.Now;
+        await sqlite.CloseAsync();
+        TimeStamp = DateTime.Now.Ticks;
         //_counter = Items.Count>0 ? Items.Max(x => x.Id) + 1 : 1;
         WriteLog(LogLevel.Information, $"staticObj.db3 загружен! записей={countAll:0}");
         return true;
@@ -129,7 +129,7 @@ public class StaticObjects
         return true;
     }
 
-    public void WriteLog(LogLevel level, string e)
+    public static void WriteLog(LogLevel level, string e)
     {
         Core.IoC.Services.GetRequiredService<ILogger<WebControllerStaticObjects>>().Log(level, e);
     }
