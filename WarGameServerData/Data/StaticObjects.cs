@@ -38,7 +38,7 @@ public class StaticObjects
                           "id INTEGER NOT NULL, " +
                           "type INTEGER NOT NULL, " +
                           "coords TEXT NOT NULL, " +
-                          "visible INTEGER NOT NULL, " +
+                          "params TEXT NOT NULL, " +
                           "name TEXT NOT NULL); ";
         await cmd.ExecuteNonQueryAsync(ct);
 
@@ -53,14 +53,15 @@ public class StaticObjects
                     var id = (int)(long)reader["id"];
                     var type = (int)(long)reader["type"];
                     var coords = (string)reader["coords"];
-                    var visible = (long)reader["visible"] == 1;
+                    var t = reader["params"];
+                    var par = t is DBNull ? string.Empty : (string)(t);
                     var name = (string)reader["name"];
                     Items.Add(new StaticObject
                     {
                         Id = id,
                         Type = type,
                         Coords = StaticObject.StringToCoords(coords),
-                        Visible = visible,
+                        ParamsJsonString = par,
                         Name = name,
                     });
                     countAll++;
@@ -99,18 +100,18 @@ public class StaticObjects
                               "id INTEGER NOT NULL, " +
                               "type INTEGER NOT NULL, " +
                               "coords TEXT NOT NULL, " +
-                              "visible INTEGER NOT NULL, " +
+                              "params TEXT NOT NULL, " +
                               "name TEXT NOT NULL); DELETE FROM Items; ";
             cmd.ExecuteNonQuery();
             foreach (var item in Items)
             {
                 cmd.CommandText = "INSERT INTO Items " +
-                                  "(id, type, coords, visible, name) " +
-                                  "VALUES (:id, :type, :coords, :visible, :name); ";
+                                  "(id, type, coords, params, name) " +
+                                  "VALUES (:id, :type, :coords, :params, :name); ";
                 cmd.Parameters.AddWithValue("id", item.Id);
                 cmd.Parameters.AddWithValue("type", item.Type);
                 cmd.Parameters.AddWithValue("coords", StaticObject.CoordsToString(item.Coords));
-                cmd.Parameters.AddWithValue("visible", item.Visible ? 1 : 0);
+                cmd.Parameters.AddWithValue("params", item.ParamsJsonString);
                 cmd.Parameters.AddWithValue("name", item.Name);
                 cmd.ExecuteNonQuery();
             }
@@ -147,10 +148,10 @@ public class StaticObject
     public int Type { get; set; }
     // Точки объекта
     public List<PointF> Coords { get; set; } = new(); 
-    //Видимость на карте
-    public bool Visible { get; set; }
     //Текстовое имя
     public string Name { get; set; } = string.Empty;
+    //Дополнительные параметры JSON
+    public string ParamsJsonString { get; set; } = string.Empty;
 
     public static string CoordsToString(List<PointF> coords)
     {
