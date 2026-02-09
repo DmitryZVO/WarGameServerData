@@ -2,8 +2,8 @@
 
 public class Server
 {
-    public float Version { get; set; } = 1.01f;
-    public string VersionString { get; set; } = "STABLE 2025-10-06";
+    public float Version { get; set; } = 1.02f;
+    public string VersionString { get; set; } = "STABLE 2026-02-09";
     public DateTime TimeStamp { get; set; } = DateTime.Now;
     public string CurrentWebState { get; set; } = string.Empty;
 
