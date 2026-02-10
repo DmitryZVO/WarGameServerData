@@ -29,7 +29,7 @@ internal class Core
             {
                 services.AddSingleton<Server>();
                 services.AddSingleton<StaticObjects>();
-                services.AddSingleton<Objects>();
+                services.AddSingleton<GameObjects>();
                 services.AddSingleton<Clients>();
             })
             .ConfigureLogging(builder =>
