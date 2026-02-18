@@ -31,6 +31,7 @@ internal class Core
                 services.AddSingleton<StaticObjects>();
                 services.AddSingleton<GameObjects>();
                 services.AddSingleton<Clients>();
+                services.AddSingleton<LanIn>();
             })
             .ConfigureLogging(builder =>
             {
@@ -46,5 +47,6 @@ internal class Core
 
         IoC.Services.GetRequiredService<StaticObjects>().StartAsync();
         IoC.Services.GetRequiredService<Server>().StartAsync();
+        IoC.Services.GetRequiredService<LanIn>().StartAsync();
     }
 }
