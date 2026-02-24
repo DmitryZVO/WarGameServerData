@@ -1,4 +1,6 @@
 ﻿using System.Text.Json.Serialization;
+using H264Sharp;
+using OpenCvSharp;
 
 namespace WarGameServerData.Data;
 
@@ -154,6 +156,19 @@ public class GameObject
     [JsonIgnore] public GameObjectTelem Telem { get; set; } = new(); // Телеметрия объекта
     [JsonIgnore] public PoolRequests Requests { get; set; } = new(); // Запросы данных с объекта
     [JsonIgnore] public RcChannelsForWrite RcForWrite { get; set; } = new(); // Значение пультов для ручного управления
+    [JsonIgnore] public Mat[] CameraFrame { get; set; } = { 
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.Chocolate ),
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.Bisque ),
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.WhiteSmoke ),
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.DarkRed ),
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.DarkGreen ),
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.YellowGreen ),
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.Orange ),
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.Pink ),
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.AliceBlue ),
+        new(new Size(800,600), MatType.CV_8UC3, Scalar.Aquamarine )}; // Кадры с камер изображения [10]
+
+    [JsonIgnore] public H264Decoder H264Decoder = new();
 }
 public class GameObjectTelem // Параметры телеметрии
 {

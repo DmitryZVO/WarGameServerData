@@ -1,10 +1,16 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using H264Sharp;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenCvSharp;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Xml.Linq;
 using WarGameServerData.Data;
 using WarGameServerData.Other;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace WarGameServerData.Controllers;
 
@@ -60,7 +66,6 @@ public class WebControllerGameObjects : ControllerBase
             Core.IoC.Services.GetRequiredService<ILogger<WebControllerGameObjects>>().Log(LogLevel.Error, e.ToString());
             return NotFound();
         }
-
     }
 
     [Route("GetGameObjectsList")]
@@ -82,9 +87,84 @@ public class WebControllerGameObjects : ControllerBase
     }
 
     [Route("GetCamera")]
-    public IActionResult GetCamera(int number)
+    public IActionResult GetCamera(int id, int number)
     {
-        return NotFound();
+        try
+        {
+            var items = Core.IoC.Services.GetRequiredService<GameObjects>().Items;
+            lock (items)
+            {
+                var item = items.Find(x => x.Id == id);
+                if (item == null) return NotFound();
+                item.Requests.CamerasLastTime[number] = DateTime.Now;
+                return Ok(Convert.ToBase64String(item.CameraFrame[number].ToBytes(".webp")));
+            }
+        }
+        catch (Exception e)
+        {
+            Core.IoC.Services.GetRequiredService<ILogger<WebControllerGameObjects>>().Log(LogLevel.Error, e.ToString());
+            return NotFound();
+        }
+    }
+    [Route("SetCamera")]
+    public IActionResult SetCamera(int id, int number, [FromBody] JsonObject json)
+    {
+        try
+        {
+            var frame = Convert.FromBase64String(JsonSerializer.Deserialize<CameraVideo>(json.ToJsonString())!.FileBase64);//Convert.FromBase64String(json.ToJsonString());
+            if (frame.Length <= 0) return NotFound();
+
+            var objs = Core.IoC.Services.GetRequiredService<GameObjects>().Items;
+            lock (objs)
+            {
+                var obj = objs.Find(x => x.Id.Equals(id));
+                if (obj == null)
+                {
+                    return NotFound();
+                }
+
+                obj.Telem.MBitServerInBytesCounter += frame.Length; // Обновляем счетчик принятых байт на сервер от объекта
+                var rgb = new RgbImage(ImageFormat.Rgb, 640, 480);
+                var s = obj.H264Decoder.Decode(frame, 0, frame.Length, true, out var state, ref rgb);
+                Console.WriteLine($"{s}: {state}, len={frame.Length:0}");
+
+                if (state == DecodingState.dsInitialOptExpected)
+                {
+                    var decParam = new TagSVCDecodingParam
+                    {
+                        uiTargetDqLayer = 0xFF,
+                        eEcActiveIdc = ERROR_CON_IDC.ERROR_CON_DISABLE,
+                        bParseOnly = false, 
+                    };
+                    decParam.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_TYPE.VIDEO_BITSTREAM_DEFAULT;
+                    obj.H264Decoder.Initialize(decParam);
+                }
+                else
+                {
+                    
+                }
+                obj.CameraFrame[number].Dispose();
+                var data = rgb.GetBytes();
+                var mm = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, data);
+                obj.CameraFrame[number] = mm;
+                //var rawFrame = obj.H264Decoder.Decode(frame);
+                //obj.H264Decoder.Transform(new MediaBuffer<byte>(frame));
+                //obj.CameraFrame[number].Dispose();
+                //obj.CameraFrame[number] = Mat.ImDecode(frame);
+            }
+
+            return Ok();
+        }
+        catch (Exception e)
+        {
+            Core.IoC.Services.GetRequiredService<ILogger<WebControllerGameObjects>>().Log(LogLevel.Error, e.ToString());
+            return NotFound();
+        }
+    }
+
+    private class CameraVideo
+    {
+        public string FileBase64 { get; set; } = string.Empty;
     }
 }
 

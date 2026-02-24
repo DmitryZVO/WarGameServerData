@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="H264Sharp" Version="1.6.0" />
     <PackageReference Include="Microsoft.AspNetCore" Version="2.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.Owin" Version="8.0.20" />
     <PackageReference Include="OpenCvSharp4" Version="4.11.0.20250507" />
