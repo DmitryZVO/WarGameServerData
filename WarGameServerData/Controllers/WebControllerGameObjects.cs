@@ -3,13 +3,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Xml.Linq;
 using WarGameServerData.Data;
 using WarGameServerData.Other;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace WarGameServerData.Controllers;
@@ -109,6 +106,8 @@ public class WebControllerGameObjects : ControllerBase
     [Route("SetCamera")]
     public IActionResult SetCamera(int id, int number, [FromBody] JsonObject json)
     {
+        var w = 640;
+        var h = 480;
         try
         {
             var frame = Convert.FromBase64String(JsonSerializer.Deserialize<CameraVideo>(json.ToJsonString())!.FileBase64);//Convert.FromBase64String(json.ToJsonString());
@@ -124,7 +123,7 @@ public class WebControllerGameObjects : ControllerBase
                 }
 
                 obj.Telem.MBitServerInBytesCounter += frame.Length; // Обновляем счетчик принятых байт на сервер от объекта
-                var rgb = new RgbImage(ImageFormat.Rgb, 640, 480);
+                var rgb = new RgbImage(ImageFormat.Rgb, w, h);
                 var s = obj.H264Decoder.Decode(frame, 0, frame.Length, true, out var state, ref rgb);
                 Console.WriteLine($"{s}: {state}, len={frame.Length:0}");
 
@@ -139,18 +138,10 @@ public class WebControllerGameObjects : ControllerBase
                     decParam.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_TYPE.VIDEO_BITSTREAM_DEFAULT;
                     obj.H264Decoder.Initialize(decParam);
                 }
-                else
-                {
-                    
-                }
                 obj.CameraFrame[number].Dispose();
                 var data = rgb.GetBytes();
-                var mm = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, data);
-                obj.CameraFrame[number] = mm;
-                //var rawFrame = obj.H264Decoder.Decode(frame);
-                //obj.H264Decoder.Transform(new MediaBuffer<byte>(frame));
-                //obj.CameraFrame[number].Dispose();
-                //obj.CameraFrame[number] = Mat.ImDecode(frame);
+                obj.CameraFrame[number] = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, data);
+                rgb.Dispose();
             }
 
             return Ok();
