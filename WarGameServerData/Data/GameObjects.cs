@@ -1,6 +1,7 @@
-﻿using System.Text.Json.Serialization;
-using H264Sharp;
+﻿using H264Sharp;
 using OpenCvSharp;
+using System.Text.Json.Serialization;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace WarGameServerData.Data;
 
@@ -156,19 +157,29 @@ public class GameObject
     [JsonIgnore] public GameObjectTelem Telem { get; set; } = new(); // Телеметрия объекта
     [JsonIgnore] public PoolRequests Requests { get; set; } = new(); // Запросы данных с объекта
     [JsonIgnore] public RcChannelsForWrite RcForWrite { get; set; } = new(); // Значение пультов для ручного управления
-    [JsonIgnore] public Mat[] CameraFrame { get; set; } = { 
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.Chocolate ),
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.Bisque ),
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.WhiteSmoke ),
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.DarkRed ),
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.DarkGreen ),
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.YellowGreen ),
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.Orange ),
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.Pink ),
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.AliceBlue ),
-        new(new Size(800,600), MatType.CV_8UC3, Scalar.Aquamarine )}; // Кадры с камер изображения [10]
+    [JsonIgnore] public CameraFrame[] CamFrames { get; set; } = {new(), new(), new(), new(), new(), new(), new(), new(), new(), new()}; // Кадры с камер изображения [10]
+}
 
-    [JsonIgnore] public H264Decoder H264Decoder = new();
+public class CameraFrame
+{
+    public const int Width = 800;
+    public const int Height = 600;
+    public H264Decoder H264Decoder;
+    public Mat Frame { get; set; }
+
+    public CameraFrame()
+    {
+        var decParam = new TagSVCDecodingParam
+        {
+            uiTargetDqLayer = 0xFF,
+            eEcActiveIdc = ERROR_CON_IDC.ERROR_CON_DISABLE,
+            bParseOnly = false,
+        };
+        decParam.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_TYPE.VIDEO_BITSTREAM_DEFAULT;
+        H264Decoder = new H264Decoder();
+        H264Decoder.Initialize(decParam);
+        Frame = new Mat(new Size(Width, Height), MatType.CV_8UC3, Scalar.Black);
+    }
 }
 public class GameObjectTelem // Параметры телеметрии
 {
@@ -204,7 +215,7 @@ public class PoolRequests // Список запросов данных с об�
             var time = DateTime.Now;
             for (var i =0;i< ret.Length;i++)
             {
-                ret[i] = (byte)((time - CamerasLastTime[i]).TotalMilliseconds < 3000 ? 1 : 0);
+                ret[i] = (byte)((time - CamerasLastTime[i]).TotalMilliseconds < 1000 ? 1 : 0);
             }
             return ret;
         }

@@ -94,7 +94,7 @@ public class WebControllerGameObjects : ControllerBase
                 var item = items.Find(x => x.Id == id);
                 if (item == null) return NotFound();
                 item.Requests.CamerasLastTime[number] = DateTime.Now;
-                return Ok(Convert.ToBase64String(item.CameraFrame[number].ToBytes(".webp")));
+                return Ok(Convert.ToBase64String(item.CamFrames[number].Frame.ToBytes(".webp")));
             }
         }
         catch (Exception e)
@@ -124,23 +124,16 @@ public class WebControllerGameObjects : ControllerBase
 
                 obj.Telem.MBitServerInBytesCounter += frame.Length; // Обновляем счетчик принятых байт на сервер от объекта
                 var rgb = new RgbImage(ImageFormat.Rgb, w, h);
-                var s = obj.H264Decoder.Decode(frame, 0, frame.Length, true, out var state, ref rgb);
-                Console.WriteLine($"{s}: {state}, len={frame.Length:0}");
-
-                if (state == DecodingState.dsInitialOptExpected)
+                var s = obj.CamFrames[number].H264Decoder.Decode(frame, 0, frame.Length, true, out var state, ref rgb);
+                if (state != DecodingState.dsErrorFree)
                 {
-                    var decParam = new TagSVCDecodingParam
-                    {
-                        uiTargetDqLayer = 0xFF,
-                        eEcActiveIdc = ERROR_CON_IDC.ERROR_CON_DISABLE,
-                        bParseOnly = false, 
-                    };
-                    decParam.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_TYPE.VIDEO_BITSTREAM_DEFAULT;
-                    obj.H264Decoder.Initialize(decParam);
+                    Console.WriteLine($"{s}: {state}, len={frame.Length:0}");
                 }
-                obj.CameraFrame[number].Dispose();
+
+                obj.CamFrames[number].Frame.Dispose();
                 var data = rgb.GetBytes();
-                obj.CameraFrame[number] = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, data);
+                using var mOrig = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, data);
+                obj.CamFrames[number].Frame = mOrig.Resize(new Size(CameraFrame.Width, CameraFrame.Height));
                 rgb.Dispose();
             }
 
