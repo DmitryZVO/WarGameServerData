@@ -169,6 +169,71 @@ public class GameObjects
                 return retEmpty;
         }
     }
+    public byte[] ParseUdpCameraPacket(byte[] data)
+    {
+        var retEmpty = Array.Empty<byte>();
+
+        // Проверка на пакет ZVO
+        if (data.Length < 10) return retEmpty; // ZVO пакет не может быть менее 10 байт
+        if (data[0] != 0x70) return retEmpty; // это не ZVO пакет
+        if (data[1] != 0x70) return retEmpty; // это не ZVO пакет
+        var type = (int)data[2]; // Тип объекта
+        var id = (int)BitConverter.ToUInt32(data, 3); // ID объекта
+        var packType = (int)data[7]; // тип входящего пакета
+        var dataLen = (int)BitConverter.ToUInt16(data, 8); ; // длинна полезных данных
+        if (data.Length != dataLen + 10)
+        {
+            //Console.WriteLine($"Слипшийся пакет! Всего {data.Length:0}, пакет соло {dataLen + 10}");
+            return retEmpty; // Динна пакета не совпадает
+        }
+
+        if (dataLen <= (1+8+4+4)) return retEmpty; // Полезные данные отсутствуют
+
+        // Находим или создаем новый игровой объект
+        GameObject? obj;
+        var time = DateTime.Now;
+        lock (Items)
+        {
+            obj = Items.Find(x => x.Id == id);
+            if (obj == null)
+            {
+                obj = new GameObject { Id = id, Type = type, Name = IdToName(id) };
+                Items.Add(obj);
+            }
+        }
+
+        // Обновляем телеметрические данные
+        obj.LastTime = time;
+        obj.Telem.MBitServerInBytesCounter += data.Length; // Обновляем счетчик принятых байт на сервер от объекта
+
+        switch (type)
+        {
+            // Разбираем входящий пакет
+            // Это Борщелодка, пакет с камерой
+            case 1 when packType == 0x11:
+                {
+                    var seek = 10; // смещение от начала заголовка
+                    var cam = data[seek]; seek += 1; // номер камеры
+                    var frameNumber = BitConverter.ToInt64(data, seek); seek += 8; // Номер кадра
+                    var frameCut = BitConverter.ToUInt32(data, seek); seek += 4; // Номер куска
+                    var frameCutAll = BitConverter.ToUInt32(data, seek); seek += 4; // Всего кусков
+                    //Console.WriteLine($"{frameNumber:0}: {frameCut:0}/{frameCutAll}, len {dataLen}");
+                    if (obj.CamFrames[cam].UdpFrameNumber != frameNumber && obj.CamFrames[cam].UdpFrame.Length > 0) // Новый кадр, пора пересоздавать матрицу кадра
+                    {
+                        obj.CamFrames[cam].DecodeFrame(cam);
+                    }
+                    obj.CamFrames[cam].UdpFrameNumber = frameNumber;
+                    obj.CamFrames[cam].UdpFrame.Write(data, seek, dataLen - (1 + 8 + 4 + 4)); // Записываем кусок данных
+                    if (frameCut == frameCutAll) // Это финальный кусок, пора пересоздавать матрицу кадра
+                    {
+                        obj.CamFrames[cam].DecodeFrame(cam);
+                    }
+                    return Array.Empty<byte>();
+                }
+            default:
+                return retEmpty;
+        }
+    }
 }
 
 public class GameObject
@@ -195,9 +260,12 @@ public class CameraFrame
     public const int Height = 600;
     public H264Decoder H264Decoder;
     public Mat Frame { get; set; }
+    public long UdpFrameNumber { get; set; } // Текущий номер кадра (для сборки)
+    public MemoryStream UdpFrame { get; set; } // Поток кадра из udp собранный из кусков
 
     public CameraFrame()
     {
+        UdpFrame = new MemoryStream();
         var decParam = new TagSVCDecodingParam
         {
             uiTargetDqLayer = 0xFF,
@@ -209,7 +277,56 @@ public class CameraFrame
         H264Decoder.Initialize(decParam);
         Frame = new Mat(new Size(Width, Height), MatType.CV_8UC3, Scalar.Black);
     }
+
+    public void DecodeFrame(int camNumber)
+    {
+        var frame = UdpFrame.ToArray();
+        var rgb = new RgbImage(ImageFormat.Rgb, CameraFrame.Width, CameraFrame.Height);
+        var s = H264Decoder.Decode(frame, 0, frame.Length, true, out var state, ref rgb);
+        if (state != DecodingState.dsErrorFree)
+        {
+            Console.WriteLine($"{s}: {state}, len={frame.Length:0}");
+        }
+
+        Frame.Dispose();
+        var data = rgb.GetBytes();
+        using var mOrig = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, data);
+        using var mat4 = mOrig.Resize(new Size(CameraFrame.Width, CameraFrame.Height));
+
+        if (camNumber == 4 | camNumber == 5) // Камеры с круговым обзором, нужна коррекция
+        {
+            const float xmin = 0.25f;
+            const float xmax = 0.75f;
+            const float ymin = 0.20f;
+            const float ymax = 0.80f;
+            var srcPoints4 = new List<Point2f>
+                    {
+                        new(CameraFrame.Width * xmin, CameraFrame.Height * ymin),
+                        new(CameraFrame.Width * xmax, CameraFrame.Height * ymin),
+                        new(CameraFrame.Width * xmin, CameraFrame.Height * ymax),
+                        new(CameraFrame.Width * xmax, CameraFrame.Height * ymax)
+                    };
+            var dstPoints4 = new List<Point2f>
+                    {
+                        new(0, 0),
+                        new(CameraFrame.Width, 0),
+                        new(0, CameraFrame.Height),
+                        new(CameraFrame.Width, CameraFrame.Height)
+                    };
+
+            using var mat44 = new Mat();
+            Cv2.WarpPerspective(mat4, mat44, Cv2.GetPerspectiveTransform(srcPoints4, dstPoints4), new Size(CameraFrame.Width, CameraFrame.Height));
+            Frame = mat44.Clone();
+        }
+        else
+        {
+            Frame = mat4.Clone();
+        }
+        rgb.Dispose();
+        UdpFrame = new MemoryStream();
+    }
 }
+
 public class GameObjectTelem // Параметры телеметрии
 {
     public float[] Servos { get; set; } = new float[8]; // Значения сервоприводов

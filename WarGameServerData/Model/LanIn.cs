@@ -19,9 +19,9 @@ public class LanIn
 
     public async void LanInPortHbAsync(CancellationToken ct = default)
     {
+        var connect = new UdpClient(UdpPortHb);
         while (!ct.IsCancellationRequested)
         {
-            var connect = new UdpClient(UdpPortHb);
             try
             {
                 // Получение данных
@@ -44,13 +44,36 @@ public class LanIn
             {
                 Console.WriteLine(e.ToString());
             }
-            connect.Close();
         }
+        connect.Close();
+    }
+
+    public async void LanInPortCameraAsync(CancellationToken ct = default)
+    {
+        var connect = new UdpClient(UdpPortCamera);
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                // Получение данных
+                var result = await connect.ReceiveAsync(ct);
+                var client = result.RemoteEndPoint;
+                var data = result.Buffer;
+                // Парсинг входящего пакета
+                var toSend = Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpCameraPacket(data);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+        }
+        connect.Close();
     }
 
     public async void StartAsync(CancellationToken ct = default)
     {
         LanInPortHbAsync(ct);
+        LanInPortCameraAsync(ct);
 
         while (!ct.IsCancellationRequested)
         {
