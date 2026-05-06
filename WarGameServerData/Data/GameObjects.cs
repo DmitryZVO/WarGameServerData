@@ -235,13 +235,18 @@ public class GameObject
 
 public class CameraFrame
 {
-    public const int Width = 960;
-    public const int Height = 540;
-    public H264Decoder H264Decoder;
-    public Mat Frame { get; set; }
+    public static readonly Size DefFrameSizeH = new(1280, 640); // Максимальный размер фрейма (High)
+    public static readonly Size DefFrameSizeM = new(640, 320); // Максимальный размер фрейма (Medium)
+    public static readonly Size DefFrameSizeL = new(320, 160); // Максимальный размер фрейма (Low)
+    public static readonly Size DefFrameSizeExL = new(160, 80); // Максимальный размер фрейма (ExtraLow)
+    public Mat Frame { get; set; } // Текущий собраный кадр (для отправки клиентам)
+    public int Fps { get; set; } // Частота входящих успешнодекодированных кадров
+
+    //public const int Width = 960;
+    //public const int Height = 540;
+    public List<H264Decoder> H264Decoders = [];
     public long UdpFrameNumber { get; set; } // Текущий номер кадра (для сборки)
     public MemoryStream UdpFrame { get; set; } // Поток кадра из udp собранный из кусков
-    public int Fps { get; set; } // Частота входящих успешнодекодированных кадров
     private int _counter = 0;
     private DateTime _last = DateTime.Now;
 
@@ -284,7 +289,7 @@ public class CameraFrame
             }
 
             using var mOrig = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, rgb.GetBytes());
-            using var mat4 = mOrig.Resize(new Size(CameraFrame.Width, CameraFrame.Height));
+            using var mat4 = mOrig.Resize(DefFrameSizeH);
 
             _counter++;
             var time = DateTime.Now;
@@ -304,21 +309,21 @@ public class CameraFrame
                 const float ymax = 0.80f;
                 var srcPoints4 = new List<Point2f>
                     {
-                        new(CameraFrame.Width * xmin, CameraFrame.Height * ymin),
-                        new(CameraFrame.Width * xmax, CameraFrame.Height * ymin),
-                        new(CameraFrame.Width * xmin, CameraFrame.Height * ymax),
-                        new(CameraFrame.Width * xmax, CameraFrame.Height * ymax)
+                        new(DefFrameSizeH.Width * xmin, DefFrameSizeH.Height * ymin),
+                        new(DefFrameSizeH.Width * xmax, DefFrameSizeH.Height * ymin),
+                        new(DefFrameSizeH.Width * xmin, DefFrameSizeH.Height * ymax),
+                        new(DefFrameSizeH.Width * xmax, DefFrameSizeH.Height * ymax)
                     };
                 var dstPoints4 = new List<Point2f>
                     {
                         new(0, 0),
-                        new(CameraFrame.Width, 0),
-                        new(0, CameraFrame.Height),
-                        new(CameraFrame.Width, CameraFrame.Height)
+                        new(DefFrameSizeH.Width, 0),
+                        new(0, DefFrameSizeH.Height),
+                        new(DefFrameSizeH.Width, DefFrameSizeH.Height)
                     };
 
                 using var mat44 = new Mat();
-                Cv2.WarpPerspective(mat4, mat44, Cv2.GetPerspectiveTransform(srcPoints4, dstPoints4), new Size(CameraFrame.Width, CameraFrame.Height));
+                Cv2.WarpPerspective(mat4, mat44, Cv2.GetPerspectiveTransform(srcPoints4, dstPoints4), DefFrameSizeH);
                 if (!Frame.IsDisposed) Frame.Dispose();
                 Frame = mat44.Clone();
             }
