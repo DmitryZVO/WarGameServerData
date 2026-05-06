@@ -16,12 +16,14 @@ if (!createdNew)
 Core.Start();
 
 var host = new WebHostBuilder().UseKestrel(options => { options.Limits.MaxRequestBodySize = null; })
-    .UseUrls("http://*:1111").UseStartup<Core>().Build();
+    .UseUrls("http://192.168.1.105:1111").UseStartup<Core>().Build();
 
 var serv = Core.IoC.Services.GetRequiredService<Server>();
 
-Core.IoC.Services.GetRequiredService<ILogger<Core>>().Log(LogLevel.Information, $"WarGame Server Data v{serv.Version.ToStringF2()} [{serv.VersionString}] START!");
+Core.IoC.Services.GetRequiredService<ILogger<Core>>().Log(LogLevel.Information, "WarGame Server Data v{a} [{b}] START!", 
+    serv.Version.ToStringF2(), serv.VersionString);
 host.Run();
 
 await Core.IoC.Services.GetRequiredService<StaticObjects>().SaveAsync();
-Core.IoC.Services.GetRequiredService<ILogger<Core>>().Log(LogLevel.Information, $"WarGame Server Data v{serv.Version.ToStringF2()} [{serv.VersionString}] STOP!");
+Core.IoC.Services.GetRequiredService<ILogger<Core>>().Log(LogLevel.Information, "WarGame Server Data v{a} [{b}] STOP!",
+    serv.Version.ToStringF2(), serv.VersionString);

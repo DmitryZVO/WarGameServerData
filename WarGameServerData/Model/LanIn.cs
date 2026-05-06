@@ -7,7 +7,7 @@ namespace WarGameServerData.Model;
 
 public class LanIn
 {
-    private const int UdpPortCamera = 7700; // Штатный порт UDP для получения потока H264 от камер игровых объектов
+    private const int UdpPortCamera = 30000; // Штатный порт UDP для получения потока H264 от камер игровых объектов
     private const int UdpPortHb = 7777; // Штатный порт UDP для получения Heartbeat от игровых объектов (с отправкой пакетов-request в ответ)
 
     // Структура любого правильного пакета:
@@ -55,9 +55,9 @@ public class LanIn
         connect.Close();
     }
 
-    public async void LanInPortCameraAsync(int _number)
+    public async void LanInPortCameraAsync(int number)
     {
-        var connect = new UdpClient(UdpPortCamera + _number);
+        var connect = new UdpClient(UdpPortCamera + number);
         while (!_ct.IsCancellationRequested)
         {
             try
