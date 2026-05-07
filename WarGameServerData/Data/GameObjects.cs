@@ -5,13 +5,99 @@ using System.Net.Sockets;
 using System.Text.Json.Serialization;
 using WarGameServerData.Model;
 using WarGameServerData.Other;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using static WarGameServerData.Data.CameraFrame;
 
 namespace WarGameServerData.Data;
 
 public class GameObjects
 {
+    public readonly static int PortServerRequests = 8000; // Входящий порт от сервера для статуса запросов
+    public readonly static int PortServerRcRewrite = 8001; // Входящий порт от сервера для перезаписи пульта
+    public readonly static int PortServerGetCommand = 8002; // Входящий порт от сервера для запроса команд на исполнение
+
+    public async void SendRequestsAsync(CancellationToken ct = default)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(50, ct);
+
+                foreach (var item in Items)
+                {
+                    await SendRequestsAsync(item);
+                }
+            }
+            catch
+            {
+                //
+            }
+        }
+    }
+
+    public static async Task SendRequestsAsync(GameObject obj)
+    {
+        if (obj.Ip.Equals(string.Empty)) return;
+
+        var data = new byte[4]; // Ответ с таблицей запросов (requests)
+        uint req = 0;
+        req += (uint)(obj.Requests.Cameras[0] ? 0b00000000000000000000000000000001 : 0);
+        req += (uint)(obj.Requests.Cameras[1] ? 0b00000000000000000000000000000010 : 0);
+        req += (uint)(obj.Requests.Cameras[2] ? 0b00000000000000000000000000000100 : 0);
+        req += (uint)(obj.Requests.Cameras[3] ? 0b00000000000000000000000000001000 : 0);
+        req += (uint)(obj.Requests.Cameras[4] ? 0b00000000000000000000000000010000 : 0);
+        req += (uint)(obj.Requests.Cameras[5] ? 0b00000000000000000000000000100000 : 0);
+        req += (uint)(obj.Requests.Cameras[6] ? 0b00000000000000000000000001000000 : 0);
+        req += (uint)(obj.Requests.Cameras[7] ? 0b00000000000000000000000010000000 : 0);
+        req += (uint)(obj.Requests.Cameras[8] ? 0b00000000000000000000000100000000 : 0);
+        req += (uint)(obj.Requests.Cameras[9] ? 0b00000000000000000000001000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[0] ? 0b00000000000000000000010000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[1] ? 0b00000000000000000000100000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[2] ? 0b00000000000000000001000000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[3] ? 0b00000000000000000010000000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[4] ? 0b00000000000000000100000000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[5] ? 0b00000000000000001000000000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[6] ? 0b00000000000000010000000000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[7] ? 0b00000000000000100000000000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[8] ? 0b00000000000001000000000000000000 : 0);
+        req += (uint)(obj.Requests.RcRewrite[9] ? 0b00000000000010000000000000000000 : 0);
+        req += (uint)(obj.Requests.Command ? 0b00000000000100000000000000000000 : 0);
+        Array.Copy(BitConverter.GetBytes(req), 0, data, 0, 4);
+
+        var send = await new UdpClient().SendAsync(data, obj.Ip, PortServerRequests, new CancellationTokenSource(100).Token);
+        obj.Telem.MBitServerOutBytesCounter += send;
+    }
+    public static async Task SendCommandAsync(GameObject obj)
+    {
+        if (obj.Ip.Equals(string.Empty)) return;
+
+        var data = new byte[4]; // Ответ с таблицей значений (requests)
+        var seek = 0; // Смещение в пакете
+        Array.Copy(BitConverter.GetBytes(obj.Requests.Commands.Count > 0 ? obj.Requests.Commands.Dequeue() : 0), 0, data, seek, 4);
+
+        var send = await new UdpClient().SendAsync(data, obj.Ip, PortServerGetCommand, new CancellationTokenSource(100).Token);
+        obj.Telem.MBitServerOutBytesCounter += send;
+    }
+
+    public static async Task SendRcRewriteAsync(GameObject obj, byte number)
+    {
+        if (obj.Ip.Equals(string.Empty)) return;
+
+        var data = new byte[1 + 8]; // Ответ с таблицей запросов (requests)
+        if (obj.RcForWrite.Length <= number) return;
+        var seek = 0;
+        data[seek] = number; seek += 1; // номер пульта
+        data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[0])) * 500 + 500) / 5); seek += 1;
+        data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[1])) * 500 + 500) / 5); seek += 1;
+        data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[2])) * 500 + 500) / 5); seek += 1;
+        data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[3])) * 500 + 500) / 5); seek += 1;
+        data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[4])) * 500 + 500) / 5); seek += 1;
+        data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[5])) * 500 + 500) / 5); seek += 1;
+        data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[6])) * 500 + 500) / 5); seek += 1;
+        data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[7])) * 500 + 500) / 5);
+
+        var send = await new UdpClient().SendAsync(data, obj.Ip, PortServerRcRewrite, new CancellationTokenSource(100).Token);
+        obj.Telem.MBitServerOutBytesCounter += send;
+    }
     public static string IdToName(int id)
     {
         return id switch
@@ -25,19 +111,19 @@ public class GameObjects
     public long TimeStamp { get; set; } = DateTime.Now.Ticks;
     public List<GameObject> Items { get; set; } = [];
 
-    public byte[] ParseUdpPacket(byte[] data)
+    public async Task ParseUdpPacketAsync(string sender, byte[] data)
     {
         var retEmpty = Array.Empty<byte>();
 
         // Проверка на пакет ZVO
-        if (data.Length < 10) return retEmpty; // ZVO пакет не может быть менее 10 байт
-        if (data[0] != 0x70) return retEmpty; // это не ZVO пакет
-        if (data[1] != 0x70) return retEmpty; // это не ZVO пакет
+        if (data.Length < 10) return; // ZVO пакет не может быть менее 10 байт
+        if (data[0] != 0x70) return; // это не ZVO пакет
+        if (data[1] != 0x70) return; // это не ZVO пакет
         var type = (int)data[2]; // Тип объекта
         var id = (int)BitConverter.ToUInt32(data, 3); // ID объекта
         var packType = (int)data[7]; // тип входящего пакета
         var dataLen = (int)BitConverter.ToUInt16(data, 8); ; // длинна полезных данных
-        if (data.Length != dataLen + 10) return retEmpty; // Динна пакета не совпадает
+        if (data.Length != dataLen + 10) return; // Динна пакета не совпадает
 
         // Находим или создаем новый игровой объект
         GameObject? obj;
@@ -56,13 +142,15 @@ public class GameObjects
         obj.LastTime = time;
         obj.Telem.MBitServerInBytesCounter += data.Length; // Обновляем счетчик принятых байт на сервер от объекта
 
+        if (obj.Ip.Equals(sender) == false) obj.Ip = sender;
+
         switch (type)
         {
             // Разбираем входящий пакет
             // Это Борщелодка, пакет HeartBeat + Telem
             case 1 when packType == 0x00:
                 {
-                    if (dataLen != ((4 * 2) + (2 * 3) + (1 * 8) + (2 * 3) + (1 * 2) + 5 + 2 + 1 + 1 + (8 * 2))) return retEmpty; // не верный размер пакета
+                    if (dataLen != ((4 * 2) + (2 * 3) + (1 * 8) + (2 * 3) + (1 * 2) + 5 + 2 + 1 + 1 + (8 * 2))) return; // не верный размер пакета
                     var seek = 10;
                     obj.LonX = BitConverter.ToSingle(data, seek); seek += 4; // LonX
                     obj.LatY = BitConverter.ToSingle(data, seek); seek += 4; // LatY
@@ -89,67 +177,25 @@ public class GameObjects
                     obj.Telem.FuelTemp = (sbyte)data[seek]; seek += 1; // Температура в баке
                     obj.Telem.AliveCheck = BitConverter.ToUInt64(data, seek); seek += 8;
                     obj.Telem.EnableCheck = BitConverter.ToUInt64(data, seek); seek += 8;
-
-
-                    var ret = new byte[4]; // Ответ с таблицей запросов (requests)
-                    uint req = 0;
-                    req += (uint)(obj.Requests.Cameras[0] ?   0b00000000000000000000000000000001 : 0);
-                    req += (uint)(obj.Requests.Cameras[1] ?   0b00000000000000000000000000000010 : 0);
-                    req += (uint)(obj.Requests.Cameras[2] ?   0b00000000000000000000000000000100 : 0);
-                    req += (uint)(obj.Requests.Cameras[3] ?   0b00000000000000000000000000001000 : 0);
-                    req += (uint)(obj.Requests.Cameras[4] ?   0b00000000000000000000000000010000 : 0);
-                    req += (uint)(obj.Requests.Cameras[5] ?   0b00000000000000000000000000100000 : 0);
-                    req += (uint)(obj.Requests.Cameras[6] ?   0b00000000000000000000000001000000 : 0);
-                    req += (uint)(obj.Requests.Cameras[7] ?   0b00000000000000000000000010000000 : 0);
-                    req += (uint)(obj.Requests.Cameras[8] ?   0b00000000000000000000000100000000 : 0);
-                    req += (uint)(obj.Requests.Cameras[9] ?   0b00000000000000000000001000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[0] ? 0b00000000000000000000010000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[1] ? 0b00000000000000000000100000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[2] ? 0b00000000000000000001000000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[3] ? 0b00000000000000000010000000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[4] ? 0b00000000000000000100000000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[5] ? 0b00000000000000001000000000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[6] ? 0b00000000000000010000000000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[7] ? 0b00000000000000100000000000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[8] ? 0b00000000000001000000000000000000 : 0);
-                    req += (uint)(obj.Requests.RcRewrite[9] ? 0b00000000000010000000000000000000 : 0);
-                    req += (uint)(obj.Requests.Command ?      0b00000000000100000000000000000000 : 0);
-                    Array.Copy(BitConverter.GetBytes(req), 0, ret, 0, 4);
-                    return ret;
+                    return;
                 }
             // Это Борщелодка, пакет запроса перезаписи RC каналов
             case 1 when packType == 0x02:
                 {
-                    if (dataLen != 1) return retEmpty;
-
-                    var ret = new byte[1 + 8]; // Ответ с таблицей запросов (requests)
-                    var number = data[10];
-                    if (obj.RcForWrite.Length <= number) return retEmpty;
-                    var seek = 0;
-                    ret[seek] = number; seek += 1; // номер пульта
-                    ret[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[0])) * 500 + 500) / 5); seek += 1;
-                    ret[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[1])) * 500 + 500) / 5); seek += 1;
-                    ret[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[2])) * 500 + 500) / 5); seek += 1;
-                    ret[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[3])) * 500 + 500) / 5); seek += 1;
-                    ret[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[4])) * 500 + 500) / 5); seek += 1;
-                    ret[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[5])) * 500 + 500) / 5); seek += 1;
-                    ret[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[6])) * 500 + 500) / 5); seek += 1;
-                    ret[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[7])) * 500 + 500) / 5); seek += 1;
-                    return ret;
+                    if (dataLen != 1) return;
+                    await SendRcRewriteAsync(obj, data[10]);
+                    return;
                 }
             // Это Борщелодка, пакет запроса команды на исполнение
             case 1 when packType == 0x04:
                 {
-                    if (dataLen != 0) return retEmpty;
-
-                    var ret = new byte[4]; // Ответ с таблицей значений (requests)
-                    var seek = 0; // Смещение в пакете
-                    Array.Copy(BitConverter.GetBytes(obj.Requests.Commands.Count > 0 ? obj.Requests.Commands.Dequeue() : 0), 0, ret, seek, 4); seek += 4;
-                    return ret;
+                    if (dataLen != 0) return;
+                    await SendCommandAsync(obj);
+                    return;
                 }
 
             default:
-                return retEmpty;
+                return;
         }
     }
 }
@@ -166,6 +212,7 @@ public class GameObject
     public float Angle { get; set; } // Угол поворота
 
     public DateTime LastTime = DateTime.MinValue; // Время последнего пакета
+    [JsonIgnore] public string Ip { get; set; } = string.Empty; // IP адрес устройства
     [JsonIgnore] public GameObjectTelem Telem { get; set; } = new(); // Телеметрия объекта
     [JsonIgnore] public PoolRequests Requests { get; set; } = new(); // Запросы данных с объекта
     [JsonIgnore] public RcChannelsForWrite[] RcForWrite { get; set; } // Кадры с пультов [10]
@@ -267,7 +314,14 @@ public class CameraFrame
             lock (FrameToSend)
             {
                 var res = new Mat();
-                Cv2.Resize(Frame, res, DefFrameToSend);
+                var sizeFrameSend = Object.Telem.VideoQuality switch
+                {
+                    3 => DefFrameToSend,
+                    2 => DefFrameSizeM,
+                    1 => DefFrameSizeL,
+                    _ => DefFrameSizeExL,
+                };
+                Cv2.Resize(Frame, res, sizeFrameSend);
                 FrameToSend = res.ToBytes(".jpeg");
                 res.Dispose();
             }
@@ -336,11 +390,11 @@ public class H264ChunkDecoder
     public int Number { get; } // Номер чанка
     public long UdpFrameNumber { get; set; } // Текущий номер кадра (для сборки)
     public MemoryStream UdpFrame { get; set; } // Поток кадра из udp собранный из кусков
-    public bool IsUpdate => (DateTime.Now - _lastUpdate).TotalMilliseconds <= 30; // Проверка на обновление чанка
+    public bool IsUpdate => (DateTime.Now - LastUpdate).TotalMilliseconds <= 30; // Проверка на обновление чанка
 
     private readonly H264Decoder _decoder;
     private readonly CameraFrame _camera;
-    private DateTime _lastUpdate { get; set; } = DateTime.MinValue;
+    private DateTime LastUpdate { get; set; } = DateTime.MinValue;
 
 
     public H264ChunkDecoder(CameraFrame camera, int number)
@@ -446,7 +500,7 @@ public class H264ChunkDecoder
             {
                 FrameChunk.Dispose();
                 FrameChunk = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, rgb.GetBytes());
-                _lastUpdate = DateTime.Now;
+                LastUpdate = DateTime.Now;
             }
 
         }

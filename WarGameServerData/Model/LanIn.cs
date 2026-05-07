@@ -31,22 +31,7 @@ public class LanIn
                 var client = result.RemoteEndPoint;
                 var data = result.Buffer;
                 // Парсинг входящего пакета
-                var toSend = Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacket(data);
-
-                // Оправляем данные в ответ на входящий пакет (если есть что отправить)
-                if (toSend.Length > 0)
-                {
-                    const int timeOutMs = 100;
-                    var udpTimeOut = new CancellationTokenSource();
-                    udpTimeOut.CancelAfter(timeOutMs);
-                    await connect.SendAsync(toSend, client, udpTimeOut.Token);
-
-                    var items = Core.IoC.Services.GetRequiredService<GameObjects>().Items;
-                    lock (items)
-                    {
-                        items.ForEach(x => x.Telem.MBitServerOutBytesCounter += toSend.Length);
-                    }
-                }
+                await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync(client.Address.ToString(), data);
             }
             catch (Exception e)
             {

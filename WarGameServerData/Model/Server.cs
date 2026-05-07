@@ -1,4 +1,8 @@
-﻿namespace WarGameServerData.Model;
+﻿using Microsoft.Extensions.DependencyInjection;
+using WarGameServerData.Data;
+using WarGameServerData.Other;
+
+namespace WarGameServerData.Model;
 
 public class Server
 {
@@ -10,7 +14,8 @@ public class Server
 
     public async void StartAsync(CancellationToken ct = default)
     {
-        //var startTime = DateTime.Now;
+        Core.IoC.Services.GetRequiredService<GameObjects>().SendRequestsAsync(ct);
+
         while (!ct.IsCancellationRequested)
         {
             await Task.Delay(1000, ct);
