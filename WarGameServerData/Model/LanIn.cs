@@ -1,14 +1,15 @@
-﻿using System.Net.Sockets;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System.Net.Sockets;
 using WarGameServerData.Data;
 using WarGameServerData.Other;
+using static WarGameServerData.Data.CameraFrame;
 
 namespace WarGameServerData.Model;
 
 public class LanIn
 {
-    private const int UdpPortCamera = 30000; // Штатный порт UDP для получения потока H264 от камер игровых объектов
-    private const int UdpPortHb = 7777; // Штатный порт UDP для получения Heartbeat от игровых объектов (с отправкой пакетов-request в ответ)
+    public readonly static int UdpPortCamera = 30000; // Штатный порт UDP для получения потока H264 от камер игровых объектов
+    public readonly static int UdpPortHb = 7777; // Штатный порт UDP для получения Heartbeat от игровых объектов (с отправкой пакетов-request в ответ)
 
     // Структура любого правильного пакета:
     // 0x70, 0x70 - заголовок ZVO (2 байта UINT16)
@@ -55,40 +56,15 @@ public class LanIn
         connect.Close();
     }
 
-    public async void LanInPortCameraAsync(int number)
-    {
-        var connect = new UdpClient(UdpPortCamera + number);
-        while (!_ct.IsCancellationRequested)
-        {
-            try
-            {
-                // Получение данных
-                var result = await connect.ReceiveAsync(_ct);
-                var client = result.RemoteEndPoint;
-                var data = result.Buffer;
-                // Парсинг входящего пакета
-                var toSend = Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpCameraPacket(data);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.ToString());
-            }
-        }
-        connect.Close();
-    }
-
     public async void StartAsync()
     {
+        var items = Core.IoC.Services.GetRequiredService<GameObjects>().Items;
+
         LanInPortHbAsync();
-        for (var i = 0; i < 10; i++)
-        {
-            LanInPortCameraAsync(i);
-        }
 
         while (!_ct.IsCancellationRequested)
         {
             await Task.Delay(1000, _ct);
-            var items = Core.IoC.Services.GetRequiredService<GameObjects>().Items;
             lock (items)
             {
                 items.ForEach(x => x.Telem.MBitServerIn = (float)Math.Round(x.Telem.MBitServerInBytesCounter * 8.0f / 1000000.0f, 3));

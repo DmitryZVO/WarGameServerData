@@ -121,10 +121,10 @@ public class WebControllerGameObjects : ControllerBase
                 var item = items.Find(x => x.Id == id);
                 if (item == null) return NotFound();
                 item.Requests.CamerasLastTime[number] = DateTime.Now;
-                if (item.CamFrames[number].Frame.Empty()) return NotFound();
-
-                var str = JsonSerializer.Serialize(item.CamFrames[number].Frame.ToBytes(".jpeg"));
-                return Ok(str);
+                lock (item.CamFrames[number].FrameToSend)
+                {
+                    return Ok(item.CamFrames[number].FrameToSend);
+                }
             }
         }
         catch (Exception e)

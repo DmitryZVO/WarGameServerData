@@ -16,7 +16,7 @@ if (!createdNew)
 Core.Start();
 
 var host = new WebHostBuilder().UseKestrel(options => { options.Limits.MaxRequestBodySize = null; })
-    .UseUrls("http://192.168.1.105:1111").UseStartup<Core>().Build();
+    .UseUrls("http://*:1111").UseStartup<Core>().Build();
 
 var serv = Core.IoC.Services.GetRequiredService<Server>();
 
