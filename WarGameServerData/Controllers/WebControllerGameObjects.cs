@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WarGameServerData.Data;
+using WarGameServerData.Model;
 using WarGameServerData.Other;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
@@ -81,6 +82,8 @@ public class WebControllerGameObjects : ControllerBase
                 var item = items.Find(x => x.Id.Equals(id));
                 if (item == null) return NotFound();
                 item.Telem.CommandCount = (byte)Math.Min(255, item.Requests.Commands.Count); // Добавляем количество команд на исполнение
+                item.Telem.QualityMeshWaterToGround = Core.IoC.Services.GetRequiredService<LanIn>().GetCounterHB(); // Качество связи меш до сервера
+                item.Telem.QualityMeshGroundToWater = (DateTime.Now - item.LastTime).TotalMilliseconds > 1000 ? 0.0f : item.Telem.QualityMeshGroundToWater;
                 var jsonStr = JsonSerializer.Serialize(item.Telem);
                 return Ok(jsonStr);
             }

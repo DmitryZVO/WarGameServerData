@@ -7,7 +7,7 @@ namespace WarGameServerData.Model;
 public class Server
 {
     public float Version { get; set; } = 1.05f;
-    public string VersionString { get; set; } = "STABLE 2026-04-24";
+    public string VersionString { get; set; } = "STABLE 2026-05-08";
     public DateTime TimeStamp { get; set; } = DateTime.Now;
     public string CurrentWebState { get; set; } = string.Empty;
 

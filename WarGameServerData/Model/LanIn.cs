@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using System.Diagnostics.Metrics;
 using System.Net.Sockets;
 using WarGameServerData.Data;
 using WarGameServerData.Other;
@@ -19,8 +20,36 @@ public class LanIn
     // 0xNN..0xNN - тело пакета
     private readonly CancellationToken _ct = new();
 
+    private int CounterHB;
+    private readonly List<float> CounterHBlist = [0.0f, 0.0f, 0.0f, 0.0f, 0.0f];
+
+    public float GetCounterHB()
+    {
+        lock (CounterHBlist)
+        {
+            return CounterHBlist.Sum() / CounterHBlist.Count;
+        }
+    }
+
+    public async void CheckAsyncHB(CancellationToken ct = default)
+    {
+        while (!_ct.IsCancellationRequested)
+        {
+            await Task.Delay(1000, ct);
+
+            lock (CounterHBlist)
+            {
+                CounterHBlist.Add(CounterHB);
+                CounterHBlist.RemoveAt(0);
+            }
+            CounterHB = 0;
+        }
+    }
+
     public async void LanInPortHbAsync()
     {
+        CheckAsyncHB();
+
         var connect = new UdpClient(UdpPortHb);
         while (!_ct.IsCancellationRequested)
         {
@@ -32,6 +61,7 @@ public class LanIn
                 var data = result.Buffer;
                 // Парсинг входящего пакета
                 await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync(client.Address.ToString(), data);
+                CounterHB++;
             }
             catch (Exception e)
             {

@@ -20,7 +20,7 @@ public class GameObjects
         {
             try
             {
-                await Task.Delay(50, ct);
+                await Task.Delay(50, ct); // 20гц
 
                 foreach (var item in Items)
                 {
@@ -150,7 +150,7 @@ public class GameObjects
             // Это Борщелодка, пакет HeartBeat + Telem
             case 1 when packType == 0x00:
                 {
-                    if (dataLen != ((4 * 2) + (2 * 3) + (1 * 8) + (2 * 3) + (1 * 2) + 5 + 2 + 1 + 1 + (8 * 2))) return; // не верный размер пакета
+                    if (dataLen != ((4 * 2) + (2 * 3) + (1 * 8) + (2 * 3) + (1 * 2) + 5 + 2 + 1 + 1 + (8 * 2) + 4)) return; // не верный размер пакета
                     var seek = 10;
                     obj.LonX = BitConverter.ToSingle(data, seek); seek += 4; // LonX
                     obj.LatY = BitConverter.ToSingle(data, seek); seek += 4; // LatY
@@ -177,6 +177,7 @@ public class GameObjects
                     obj.Telem.FuelTemp = (sbyte)data[seek]; seek += 1; // Температура в баке
                     obj.Telem.AliveCheck = BitConverter.ToUInt64(data, seek); seek += 8;
                     obj.Telem.EnableCheck = BitConverter.ToUInt64(data, seek); seek += 8;
+                    obj.Telem.QualityMeshGroundToWater = BitConverter.ToSingle(data, seek); seek += 4;
                     return;
                 }
             // Это Борщелодка, пакет запроса перезаписи RC каналов
@@ -517,6 +518,8 @@ public class GameObjectTelem // Параметры телеметрии
     public float MBitObjectOut { get; set; } // Передача данных от объекта в мегабитах (на объекте)
     public float MBitServerOut { get; set; } // Передача данных от сервера в мегабитах (на сервере)
     public float PingToServer { get; set; } // Пинг до сервера и обратно
+    public float QualityMeshWaterToGround { get; set; }  // Качество связи через МЭШ с воды до сервера
+    public float QualityMeshGroundToWater { get; set; }  // Качество связи через МЭШ с сервера до воды
     public float RollGrad { get; set; } // Угол наклона
     public float PitchGrad { get; set; } // Угол наклона
     public float YawGrad { get; set; } // Угол наклона
