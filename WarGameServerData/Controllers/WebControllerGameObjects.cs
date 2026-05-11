@@ -82,8 +82,12 @@ public class WebControllerGameObjects : ControllerBase
                 var item = items.Find(x => x.Id.Equals(id));
                 if (item == null) return NotFound();
                 item.Telem.CommandCount = (byte)Math.Min(255, item.Requests.Commands.Count); // Добавляем количество команд на исполнение
-                item.Telem.QualityMeshWaterToGround = Core.IoC.Services.GetRequiredService<LanIn>().GetCounterHB(); // Качество связи меш до сервера
+                item.Telem.QualityMeshWaterToGround = Core.IoC.Services.GetRequiredService<LanIn>().GetCounterMeshHB(); // Качество связи меш до сервера
                 item.Telem.QualityMeshGroundToWater = (DateTime.Now - item.LastTime).TotalMilliseconds > 1000 ? 0.0f : item.Telem.QualityMeshGroundToWater;
+                item.Telem.QualityZvoWaterToGround = Core.IoC.Services.GetRequiredService<LanIn>().GetCounterZvoHB(); // Качество связи меш до сервера
+                item.Telem.QualityZvoGroundToWater = (DateTime.Now - item.LastTime).TotalMilliseconds > 1000 ? 0.0f : item.Telem.QualityZvoGroundToWater;
+                item.Telem.NoiseZvoGround = Core.IoC.Services.GetRequiredService<ZvoRadio>().GetCounterZvoNoise; // Шум на стороне земли
+                item.Telem.CrcErrorsZvoGround = Core.IoC.Services.GetRequiredService<ZvoRadio>().GetCounterZvoCrcErrors; // Ошибки CRC на стороне земли
                 var jsonStr = JsonSerializer.Serialize(item.Telem);
                 return Ok(jsonStr);
             }

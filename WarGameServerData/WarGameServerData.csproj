@@ -12,10 +12,13 @@
     <PackageReference Include="H264Sharp" Version="1.6.0" />
     <PackageReference Include="Microsoft.AspNetCore" Version="2.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.Owin" Version="8.0.20" />
+    <PackageReference Include="Microsoft.AspNetCore.Server.Kestrel.Core" Version="2.3.6" />
     <PackageReference Include="OpenCvSharp4" Version="4.11.0.20250507" />
     <PackageReference Include="OpenCvSharp4.Extensions" Version="4.11.0.20250507" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.11.0.20250507" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
+    <PackageReference Include="System.Formats.Asn1" Version="8.0.1" />
+    <PackageReference Include="System.IO.Hashing" Version="10.0.7" />
   </ItemGroup>
 
 </Project>

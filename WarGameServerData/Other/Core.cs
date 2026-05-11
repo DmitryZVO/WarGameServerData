@@ -31,6 +31,8 @@ internal class Core
                 services.AddSingleton<StaticObjects>();
                 services.AddSingleton<GameObjects>();
                 services.AddSingleton<LanIn>();
+                services.AddSingleton(sp => new ZvoRadio("192.168.1.51", 2222, 16))
+                ;
             })
             .ConfigureLogging(builder =>
             {
@@ -43,6 +45,18 @@ internal class Core
                 });
             })
             .Build();
+
+        var radio = IoC.Services.GetRequiredService<ZvoRadio>();
+        radio.AddRadioHead([0, 0, 9, 0, 4, 0, 0, 0, 2]); // ZVO_RATE_2_B_1Mbit_20MHz_CCK, SGI
+        radio.AddRadioHead([0, 0, 9, 0, 4, 0, 0, 0, 12]); // ZVO_RATE_12_AG_6Mbit_20MHz_OFDM, SGI
+        radio.AddRadioHead([0, 0, 11, 0, 0, 0, 8, 0, 15, 12, 0]); // ZVO_RATE_110_N_7Mbit_20MHz_MIMOx1_MSC0_BPSK_1_2, SGI
+        radio.AddRadioHead([0, 0, 9, 0, 4, 0, 0, 0, 2]); // ZVO_RATE_2_B_1Mbit_20MHz_CCK, SGI
+        radio.AddRadioHead([0, 0, 9, 0, 4, 0, 0, 0, 12]); // ZVO_RATE_12_AG_6Mbit_20MHz_OFDM, SGI
+        radio.AddRadioHead([0, 0, 11, 0, 0, 0, 8, 0, 15, 12, 0]); // ZVO_RATE_110_N_7Mbit_20MHz_MIMOx1_MSC0_BPSK_1_2, SGI
+        radio.AddRadioHead([0, 0, 9, 0, 4, 0, 0, 0, 2]); // ZVO_RATE_2_B_1Mbit_20MHz_CCK, SGI
+        radio.AddRadioHead([0, 0, 9, 0, 4, 0, 0, 0, 12]); // ZVO_RATE_12_AG_6Mbit_20MHz_OFDM, SGI
+        radio.AddRadioHead([0, 0, 11, 0, 0, 0, 8, 0, 15, 12, 0]); // ZVO_RATE_110_N_7Mbit_20MHz_MIMOx1_MSC0_BPSK_1_2, SGI
+        radio.StartAsync();
 
         IoC.Services.GetRequiredService<StaticObjects>().StartAsync();
         IoC.Services.GetRequiredService<Server>().StartAsync();

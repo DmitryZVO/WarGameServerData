@@ -65,6 +65,17 @@ public class GameObjects
 
         var send = await new UdpClient().SendAsync(data, obj.Ip, PortServerRequests, new CancellationTokenSource(100).Token);
         obj.Telem.MBitServerOutBytesCounter += send;
+
+        /*
+        var RtHeader = new byte[] { 0, 0, 48, 0, 47, 64, 0, 160, 32, 8, 0, 160, 32, 8, 0, 160, 32, 8, 0, 0, 0, 0, 0, 0, 26, 240, 183, 191, 12, 0, 0, 0, 18, 22, 118, 9, 160, 0, 225, 0, 0, 0, 216, 0, 220, 1, 222, 2 };
+        var ms = new MemoryStream();
+        ms.Write([0x70, 0x70]);
+        ms.Write(RtHeader, 0, RtHeader.Length);
+        ms.Write(data);
+        new UdpClient().Send(ms.GetBuffer(), "192.168.1.51", 2222);
+        ms.Dispose();
+        */
+
     }
     public static async Task SendCommandAsync(GameObject obj)
     {
@@ -123,7 +134,7 @@ public class GameObjects
         var id = (int)BitConverter.ToUInt32(data, 3); // ID объекта
         var packType = (int)data[7]; // тип входящего пакета
         var dataLen = (int)BitConverter.ToUInt16(data, 8); ; // длинна полезных данных
-        if (data.Length != dataLen + 10) return; // Динна пакета не совпадает
+        if (data.Length < dataLen + 10) return; // Динна пакета не совпадает
 
         // Находим или создаем новый игровой объект
         GameObject? obj;
@@ -150,7 +161,7 @@ public class GameObjects
             // Это Борщелодка, пакет HeartBeat + Telem
             case 1 when packType == 0x00:
                 {
-                    if (dataLen != ((4 * 2) + (2 * 3) + (1 * 8) + (2 * 3) + (1 * 2) + 5 + 2 + 1 + 1 + (8 * 2) + 4)) return; // не верный размер пакета
+                    if (dataLen < ((4 * 2) + (2 * 3) + (1 * 8) + (2 * 3) + (1 * 2) + 5 + 2 + 1 + 1 + (8 * 2) + 4)) return; // не верный размер пакета
                     var seek = 10;
                     obj.LonX = BitConverter.ToSingle(data, seek); seek += 4; // LonX
                     obj.LatY = BitConverter.ToSingle(data, seek); seek += 4; // LatY
@@ -183,14 +194,14 @@ public class GameObjects
             // Это Борщелодка, пакет запроса перезаписи RC каналов
             case 1 when packType == 0x02:
                 {
-                    if (dataLen != 1) return;
+                    if (dataLen < 1) return;
                     await SendRcRewriteAsync(obj, data[10]);
                     return;
                 }
             // Это Борщелодка, пакет запроса команды на исполнение
             case 1 when packType == 0x04:
                 {
-                    if (dataLen != 0) return;
+                    if (dataLen < 0) return;
                     await SendCommandAsync(obj);
                     return;
                 }
@@ -520,6 +531,10 @@ public class GameObjectTelem // Параметры телеметрии
     public float PingToServer { get; set; } // Пинг до сервера и обратно
     public float QualityMeshWaterToGround { get; set; }  // Качество связи через МЭШ с воды до сервера
     public float QualityMeshGroundToWater { get; set; }  // Качество связи через МЭШ с сервера до воды
+    public float QualityZvoWaterToGround { get; set; }  // Качество связи через ZVO с воды до сервера
+    public float QualityZvoGroundToWater { get; set; }  // Качество связи через ZVO с сервера до воды
+    public float NoiseZvoGround { get; set; }  // Шум на связи ZVO на стороне сервера
+    public float CrcErrorsZvoGround { get; set; }  // Шум на связи ZVO на стороне сервера
     public float RollGrad { get; set; } // Угол наклона
     public float PitchGrad { get; set; } // Угол наклона
     public float YawGrad { get; set; } // Угол наклона

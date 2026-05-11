@@ -1,16 +1,15 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using System.Diagnostics.Metrics;
 using System.Net.Sockets;
 using WarGameServerData.Data;
 using WarGameServerData.Other;
-using static WarGameServerData.Data.CameraFrame;
 
 namespace WarGameServerData.Model;
 
 public class LanIn
 {
-    public readonly static int UdpPortCamera = 30000; // Штатный порт UDP для получения потока H264 от камер игровых объектов
-    public readonly static int UdpPortHb = 7777; // Штатный порт UDP для получения Heartbeat от игровых объектов (с отправкой пакетов-request в ответ)
+    public const int UdpPortCamera = 30000; // Штатный порт UDP для получения потока H264 от камер игровых объектов
+    public const int UdpPortHb = 7777; // Штатный порт UDP для получения Heartbeat от игровых объектов (с отправкой пакетов-request в ответ)
+    public const int UdpPortZvo = 2222; // Штатный порт UDP для получения пакетов от радио ZVO
 
     // Структура любого правильного пакета:
     // 0x70, 0x70 - заголовок ZVO (2 байта UINT16)
@@ -20,14 +19,23 @@ public class LanIn
     // 0xNN..0xNN - тело пакета
     private readonly CancellationToken _ct = new();
 
-    private int CounterHB;
-    private readonly List<float> CounterHBlist = [0.0f, 0.0f, 0.0f, 0.0f, 0.0f];
+    private readonly List<float> CounterMeshHBlist = [0.0f, 0.0f, 0.0f, 0.0f, 0.0f];
+    private int CounterMeshHB;
 
-    public float GetCounterHB()
+    private readonly List<float> CounterZvoHBlist = [0.0f, 0.0f, 0.0f, 0.0f, 0.0f];
+    private int CounterZvoHB;
+    public float GetCounterMeshHB()
     {
-        lock (CounterHBlist)
+        lock (CounterMeshHBlist)
         {
-            return CounterHBlist.Sum() / CounterHBlist.Count;
+            return CounterMeshHBlist.Sum() / CounterMeshHBlist.Count;
+        }
+    }
+    public float GetCounterZvoHB()
+    {
+        lock (CounterZvoHBlist)
+        {
+            return CounterZvoHBlist.Sum() / CounterZvoHBlist.Count;
         }
     }
 
@@ -37,12 +45,19 @@ public class LanIn
         {
             await Task.Delay(1000, ct);
 
-            lock (CounterHBlist)
+            lock (CounterMeshHBlist)
             {
-                CounterHBlist.Add(CounterHB);
-                CounterHBlist.RemoveAt(0);
+                CounterMeshHBlist.Add(CounterMeshHB);
+                CounterMeshHBlist.RemoveAt(0);
             }
-            CounterHB = 0;
+            lock (CounterZvoHBlist)
+            {
+                CounterZvoHBlist.Add(CounterZvoHB);
+                CounterZvoHBlist.RemoveAt(0);
+            }
+
+            CounterMeshHB = 0;
+            CounterZvoHB = 0;
         }
     }
 
@@ -61,7 +76,7 @@ public class LanIn
                 var data = result.Buffer;
                 // Парсинг входящего пакета
                 await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync(client.Address.ToString(), data);
-                CounterHB++;
+                CounterMeshHB++;
             }
             catch (Exception e)
             {
@@ -71,10 +86,17 @@ public class LanIn
         connect.Close();
     }
 
+    public async Task RecvZvoPacket(byte[] data)
+    {
+        await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.240", data);
+        CounterZvoHB++;
+    }
+
     public async void StartAsync()
     {
-        var items = Core.IoC.Services.GetRequiredService<GameObjects>().Items;
+        Core.IoC.Services.GetRequiredService<ZvoRadio>().OnGetPacketAsync += RecvZvoPacket;
 
+        var items = Core.IoC.Services.GetRequiredService<GameObjects>().Items;
         LanInPortHbAsync();
 
         while (!_ct.IsCancellationRequested)
