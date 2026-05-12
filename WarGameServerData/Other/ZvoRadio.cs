@@ -1,5 +1,6 @@
 ﻿using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.IO.Compression;
 using System.Net.Sockets;
 
 namespace WarGameServerData.Other;
@@ -181,7 +182,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             ApRadioBytesSend = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
             ApRadioBytesRecv = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
             ApRadioSendQueue = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
-            ApLanSendQueue = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApLanSendQueue = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek));
         }
     }
 
@@ -433,5 +434,26 @@ public class ZvoRadio(string apIp, ushort apPort)
                 array[SeekStart + DataSize * 2 - SizeCrc * 2 + i * 2 + 1] = (byte)(crc32[i] ^ XorByte);
             }
         }
+    }
+    public static byte[] CompressZip(byte[] data)
+    {
+        using var msIn = new MemoryStream(data);
+        using var msOut = new MemoryStream();
+        using (var ds = new DeflateStream(msOut, CompressionLevel.SmallestSize))
+        {
+            msIn.CopyTo(ds);
+        }
+        return msOut.ToArray();
+    }
+
+    public static byte[] DecompressZip(byte[] dataZip)
+    {
+        using var msIn = new MemoryStream(dataZip);
+        using var msOut = new MemoryStream();
+        using (var ds = new DeflateStream(msIn, CompressionMode.Decompress))
+        {
+            ds.CopyTo(msOut);
+        }
+        return msOut.ToArray();
     }
 }

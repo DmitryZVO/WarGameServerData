@@ -1,6 +1,7 @@
 ﻿using H264Sharp;
 using Microsoft.Extensions.DependencyInjection;
 using OpenCvSharp;
+using System.IO.Compression;
 using System.Net.Sockets;
 using System.Text.Json.Serialization;
 using WarGameServerData.Model;
@@ -114,8 +115,10 @@ public class GameObjects
     public long TimeStamp { get; set; } = DateTime.Now.Ticks;
     public List<GameObject> Items { get; set; } = [];
 
-    public async Task ParseUdpPacketAsync(string sender, byte[] data)
+    public async Task ParseUdpPacketAsync(string sender, byte[] dataZip)
     {
+        var data = ZvoRadio.DecompressZip(dataZip);
+
         var retEmpty = Array.Empty<byte>();
 
         // Проверка на пакет ZVO
@@ -441,9 +444,10 @@ public class H264ChunkDecoder
                 // Получение данных
                 var result = await connect.ReceiveAsync(ct);
                 var client = result.RemoteEndPoint;
-                var data = result.Buffer;
+                var dataZip = result.Buffer;
                 // Парсинг входящего пакета
-                ParseUdpChunkPacket(data);
+
+                ParseUdpChunkPacket(ZvoRadio.DecompressZip(dataZip));
             }
             catch (Exception e)
             {
