@@ -63,19 +63,9 @@ public class GameObjects
         req += (uint)(obj.Requests.Command ? 0b00000000000100000000000000000000 : 0);
         Array.Copy(BitConverter.GetBytes(req), 0, data, 0, 4);
 
-        var send = await new UdpClient().SendAsync(data, obj.Ip, PortServerRequests, new CancellationTokenSource(100).Token);
-        obj.Telem.MBitServerOutBytesCounter += send;
-
-        /*
-        var RtHeader = new byte[] { 0, 0, 48, 0, 47, 64, 0, 160, 32, 8, 0, 160, 32, 8, 0, 160, 32, 8, 0, 0, 0, 0, 0, 0, 26, 240, 183, 191, 12, 0, 0, 0, 18, 22, 118, 9, 160, 0, 225, 0, 0, 0, 216, 0, 220, 1, 222, 2 };
-        var ms = new MemoryStream();
-        ms.Write([0x70, 0x70]);
-        ms.Write(RtHeader, 0, RtHeader.Length);
-        ms.Write(data);
-        new UdpClient().Send(ms.GetBuffer(), "192.168.1.51", 2222);
-        ms.Dispose();
-        */
-
+        await new UdpClient().SendAsync(data, obj.Ip, PortServerRequests, new CancellationTokenSource(100).Token);
+        Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(data, ZvoRadio.TransferMode.MaxRange);
+        obj.Telem.MBitServerOutBytesCounter += data.Length;
     }
     public static async Task SendCommandAsync(GameObject obj)
     {
@@ -85,8 +75,9 @@ public class GameObjects
         var seek = 0; // Смещение в пакете
         Array.Copy(BitConverter.GetBytes(obj.Requests.Commands.Count > 0 ? obj.Requests.Commands.Dequeue() : 0), 0, data, seek, 4);
 
-        var send = await new UdpClient().SendAsync(data, obj.Ip, PortServerGetCommand, new CancellationTokenSource(100).Token);
-        obj.Telem.MBitServerOutBytesCounter += send;
+        await new UdpClient().SendAsync(data, obj.Ip, PortServerGetCommand, new CancellationTokenSource(100).Token);
+        Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(data, ZvoRadio.TransferMode.MaxRange);
+        obj.Telem.MBitServerOutBytesCounter += data.Length;
     }
 
     public static async Task SendRcRewriteAsync(GameObject obj, byte number)
@@ -107,6 +98,7 @@ public class GameObjects
         data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[7])) * 500 + 500) / 5);
 
         var send = await new UdpClient().SendAsync(data, obj.Ip, PortServerRcRewrite, new CancellationTokenSource(100).Token);
+        Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(data, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send;
     }
     public static string IdToName(int id)
@@ -161,7 +153,7 @@ public class GameObjects
             // Это Борщелодка, пакет HeartBeat + Telem
             case 1 when packType == 0x00:
                 {
-                    if (dataLen < ((4 * 2) + (2 * 3) + (1 * 8) + (2 * 3) + (1 * 2) + 5 + 2 + 1 + 1 + (8 * 2) + 4)) return; // не верный размер пакета
+                    if (dataLen < ((4 * 2) + (2 * 3) + (1 * 8) + (2 * 3) + (1 * 2) + 5 + 2 + 1 + 1 + (8 * 2) + (4 * 2) + 1 + (2 * 2))) return; // не верный размер пакета
                     var seek = 10;
                     obj.LonX = BitConverter.ToSingle(data, seek); seek += 4; // LonX
                     obj.LatY = BitConverter.ToSingle(data, seek); seek += 4; // LatY
@@ -189,6 +181,10 @@ public class GameObjects
                     obj.Telem.AliveCheck = BitConverter.ToUInt64(data, seek); seek += 8;
                     obj.Telem.EnableCheck = BitConverter.ToUInt64(data, seek); seek += 8;
                     obj.Telem.QualityMeshGroundToWater = BitConverter.ToSingle(data, seek); seek += 4;
+                    obj.Telem.QualityZvoGroundToWater = BitConverter.ToSingle(data, seek); seek += 4;
+                    obj.Telem.QueueZvoWaterToGroundSend = data[seek]; seek += 1;
+                    obj.Telem.MbitsZvoWaterToGroundSend = BitConverter.ToUInt16(data, seek) / (float)ushort.MaxValue; seek += 2;
+                    obj.Telem.MbitsZvoWaterToGroundRecv = BitConverter.ToUInt16(data, seek) / (float)ushort.MaxValue; seek += 2;
                     return;
                 }
             // Это Борщелодка, пакет запроса перезаписи RC каналов
@@ -533,8 +529,12 @@ public class GameObjectTelem // Параметры телеметрии
     public float QualityMeshGroundToWater { get; set; }  // Качество связи через МЭШ с сервера до воды
     public float QualityZvoWaterToGround { get; set; }  // Качество связи через ZVO с воды до сервера
     public float QualityZvoGroundToWater { get; set; }  // Качество связи через ZVO с сервера до воды
-    public float NoiseZvoGround { get; set; }  // Шум на связи ZVO на стороне сервера
-    public float CrcErrorsZvoGround { get; set; }  // Шум на связи ZVO на стороне сервера
+    public byte QueueZvoWaterToGroundSend { get; set; } // Очередь отправки пакетов с воды до сервера
+    public float MbitsZvoWaterToGroundSend { get; set; } // Отправка с воды до сервера в мегабитах
+    public float MbitsZvoWaterToGroundRecv { get; set; } // Прием с воды до сервера в мегабитах
+    public byte QueueZvoGroundToWaterSend { get; set; } // Очередь отправки пакетов с сервера до воды
+    public float MbitsZvoGroundToWaterSend { get; set; } // Отправка с сервера до воды в мегабитах
+    public float MbitsZvoGroundToWaterRecv { get; set; } // Прием с сервера до воды в мегабитах
     public float RollGrad { get; set; } // Угол наклона
     public float PitchGrad { get; set; } // Угол наклона
     public float YawGrad { get; set; } // Угол наклона

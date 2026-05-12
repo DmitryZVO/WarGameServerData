@@ -1,73 +1,109 @@
-﻿using System.Collections.Concurrent;
+﻿using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Net.Sockets;
 
 namespace WarGameServerData.Other;
 
-public class ZvoRadio
+public class ZvoRadio(string apIp, ushort apPort)
 {
-#pragma warning disable CA2211 // Поля, не являющиеся константами, не должны быть видимыми
-    public static byte SizeData = 16;
-#pragma warning restore CA2211 // Поля, не являющиеся константами, не должны быть видимыми
+    public static bool PrintLog => false;
+    public static int TimeOutCreateMs => 300;
+    public static int SeekStart => (SizeHeader + SizeCrc);
 
-    public static readonly byte SizeHeader = 9;
+    public static readonly byte SizeHeader = 8;
     public static readonly byte SizeCrc = 4;
+
+    public ulong ApLanPacketsSend { get; private set; }
+    public ulong ApLanPacketsRecv { get; private set; }
+    public ulong ApRadioPacketsSend { get; private set; }
+    public ulong ApRadioPacketsRecv { get; private set; }
+    public ulong ApLanBytesSend { get; private set; }
+    public ulong ApLanBytesRecv { get; private set; }
+    public ulong ApRadioBytesSend { get; private set; }
+    public ulong ApRadioBytesRecv { get; private set; }
+    public ulong ApLanSendQueue { get; private set; }
+    public ulong ApRadioSendQueue { get; private set; }
 
     public Func<byte[], Task> OnGetPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
 
-    private readonly List<byte[]> RadioHeaders = [];
+    private readonly List<byte[]> RadioHeadersMaxRange = [];
+    private readonly List<byte[]> RadioHeadersVideoEL = [];
+    private readonly List<byte[]> RadioHeadersVideoL = [];
+    private readonly List<byte[]> RadioHeadersVideoM = [];
+    private readonly List<byte[]> RadioHeadersVideoH = [];
+
     private byte PacketNumber = 0; // циклический номер пакета
-    private readonly string ApIp; // адрес точки пересылки
-    private readonly ushort ApPort; // порт точки пересылки
 
     private readonly ConcurrentQueue<RadioChunk> ChunksSend = new(); // Чанки для оправки
     private readonly List<RecvPacket> PacketsRecv = []; // Собраные пакеты
     private readonly CancellationToken _ct = new();
 
-    private float CounterZvoNoise;
-    private int CounterZvoNoiseBytesInternal;
-    public float GetCounterZvoNoise => CounterZvoNoise;
-    private float CounterZvoCrcErrors;
-    private int CounterZvoCrcErrorsInternal;
-    public float GetCounterZvoCrcErrors => CounterZvoCrcErrors;
-
-    public ZvoRadio(string apIp, ushort apPort, byte sizeData)
+    public void AddRadioHead(TransferMode mode, int repeats, byte[] radiohead)
     {
-        ApIp = apIp;
-        ApPort = apPort;
-        SizeData = sizeData;
-    }
-
-    public void AddRadioHead(byte[] radiohead)
-    {
-        lock (RadioHeaders)
+        switch (mode)
         {
-            RadioHeaders.Add(radiohead);
+            case TransferMode.MaxRange:
+            default:
+                lock (RadioHeadersMaxRange)
+                {
+                    for (var i = 0; i < repeats; i++)
+                    {
+                        RadioHeadersMaxRange.Add(radiohead);
+                    }
+                }
+                break;
+            case TransferMode.VideoEL:
+                lock (RadioHeadersVideoEL)
+                {
+                    for (var i = 0; i < repeats; i++)
+                    {
+                        RadioHeadersVideoEL.Add(radiohead);
+                    }
+                }
+                break;
+            case TransferMode.VideoL:
+                lock (RadioHeadersVideoL)
+                {
+                    for (var i = 0; i < repeats; i++)
+                    {
+                        RadioHeadersVideoL.Add(radiohead);
+                    }
+                }
+                break;
+            case TransferMode.VideoM:
+                lock (RadioHeadersVideoM)
+                {
+                    for (var i = 0; i < repeats; i++)
+                    {
+                        RadioHeadersVideoM.Add(radiohead);
+                    }
+                }
+                break;
+            case TransferMode.VideoH:
+                lock (RadioHeadersVideoH)
+                {
+                    for (var i = 0; i < repeats; i++)
+                    {
+                        RadioHeadersVideoH.Add(radiohead);
+                    }
+                }
+                break;
         }
     }
 
-    public void Send(byte[] data) // Отправить пакет в радиоэфир
+    public void Send(byte[] data, TransferMode mode) // Отправить пакет в радиоэфир
     {
-        var seek = 0;
-        ushort cut = 0;
-        var cuts = (ushort)(data.Length / SizeData + ((data.Length % SizeData > 0) ? 1 : 0));
-        do
+        var chunk = new RadioChunk
         {
-            var len = Math.Min(SizeData, data.Length - seek);
-            var chunk = new RadioChunk
-            {
-                PacketNumber = PacketNumber, // Номер пакета
-                CutNumber = cut, // Номер куска
-                CutsAll = cuts, // Всего кусков
-                Data = data[seek..(seek + len)] // Полезные анные
-            };
-            chunk.CalcAndWriteCrc32(); // Заполняем CRC32
+            PacketNumber = PacketNumber, // Номер пакета
+            DataSize = (ushort)data.Length, /// Полезные данные
+            TransferMode = mode, // тип отправки
+        };
+        chunk.CalcAndWriteCrc32(); // Заполняем CRC32
+        chunk.WriteNormalData(data); // Пишем нормальные данные
+        ChunksSend.Enqueue(chunk);
 
-            ChunksSend.Enqueue(chunk);
-
-            cut++;
-            seek += len;
-        }
-        while (seek < data.Length);
+        if (PrintLog) Console.WriteLine(Convert.ToHexString(chunk.GetArray));
         PacketNumber++;
     }
 
@@ -75,17 +111,13 @@ public class ZvoRadio
     {
         ThreadSendAsync();
         ThreadRecvAsync();
+        ThreadRecvApAsync();
         ThreadRecvActionAsync();
 
         while (!_ct.IsCancellationRequested)
         {
             await Task.Delay(1000, _ct);
-            Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio CHUNK={SizeData:0}: ForSend={ChunksSend.Count:0}, PacketsRecv={PacketsRecv.Count:0}");
-
-            CounterZvoNoise = (CounterZvoNoiseBytesInternal * 8) / 1_000_000.0f;
-            CounterZvoCrcErrors = CounterZvoCrcErrorsInternal;
-            CounterZvoNoiseBytesInternal = 0;
-            CounterZvoCrcErrorsInternal = 0;
+            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: ForSend={ChunksSend.Count:0}, PacketsRecv={PacketsRecv.Count:0}");
         }
     }
 
@@ -97,38 +129,18 @@ public class ZvoRadio
 
     public async void ThreadRecvAsync()
     {
-        var noise = 0;
-        var connect = new UdpClient(ApPort);
+        var connect = new UdpClient(apPort);
         while (!_ct.IsCancellationRequested)
         {
-            if (noise > 0) // Прошлый пакет был шумом
-            {
-                CounterZvoNoiseBytesInternal += noise;
-            }
-            // Получение данных
             var result = await connect.ReceiveAsync(_ct);
             var sender = result.RemoteEndPoint;
             var data = result.Buffer;
-            noise = data.Length;
 
-            if (!sender.Address.ToString().Equals(ApIp)) continue; // Пакет не от точки связи
-            if (data.Length <= 3) continue; // Огрызок пакета
-            var dataChunk = data[data[2]..^4]; // чанк ZVO
+            if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
+            if (data.Length < SizeHeader + SizeCrc + 4) continue; // Огрызок пакета
+            var dataChunk = data[..^4]; // чанк ZVO
             var chunk = new RadioChunk(dataChunk);
-            if (chunk.Check != ChunkState.OK)
-            {
-                if (chunk.Check == ChunkState.ErrorCrc)
-                {
-                    CounterZvoCrcErrorsInternal++;
-                    noise = 0;
-                    continue;
-                }
-                if (chunk.Check == ChunkState.ErrorZvo)
-                {
-                    continue;
-                }
-                continue;
-            }
+            if (chunk.Check != ChunkState.OK) continue;
 
             lock (PacketsRecv)
             {
@@ -139,11 +151,35 @@ public class ZvoRadio
                 }
                 else
                 {
-                    packet.AddChunk(chunk);
+                    packet.AddRepeat(chunk);
                 }
             }
+        }
+    }
 
-            noise = 0;
+    public async void ThreadRecvApAsync()
+    {
+        var connect = new UdpClient(apPort + 1);
+        while (!_ct.IsCancellationRequested)
+        {
+            var result = await connect.ReceiveAsync(_ct);
+            var sender = result.RemoteEndPoint;
+            var data = result.Buffer;
+
+            if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
+            if (data.Length < SizeHeader + SizeCrc + 4) continue; // Огрызок пакета
+
+            var seek = 2;
+            ApLanPacketsSend = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApLanPacketsRecv = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApLanBytesSend = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApLanBytesRecv = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApRadioPacketsSend = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApRadioPacketsRecv = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApRadioBytesSend = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApRadioBytesRecv = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApRadioSendQueue = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
+            ApLanSendQueue = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
         }
     }
 
@@ -166,7 +202,11 @@ public class ZvoRadio
 
             lock (PacketsRecv)
             {
-                removed = PacketsRecv.RemoveAll(x => (DateTime.Now - x.LastUpdate).TotalMilliseconds > 300);
+                if (packet != null)
+                {
+                    PacketsRecv.Remove(packet);
+                }
+                removed = PacketsRecv.RemoveAll(x => (DateTime.Now - x.LastUpdate).TotalMilliseconds >= TimeOutCreateMs);
             }
 
             if (removed == 0) await Task.Delay(10, _ct);
@@ -176,55 +216,37 @@ public class ZvoRadio
     public class RecvPacket(RadioChunk chunk)
     {
         public DateTime LastUpdate = DateTime.Now;
-        public bool OK => CutsAll != 0 && CutsAll == Cuts.Count;
+        public bool OK => Chunk.DataIsValid;
         public byte Number { get; set; } = chunk.PacketNumber;
+        private RadioChunk Chunk { get; } = chunk;
 
-        private ushort CutsAll { get; } = chunk.CutsAll;
-        private List<Cut> Cuts { get; } = [new Cut(chunk.CutNumber, chunk.Data)];
-
-        public void AddChunk(RadioChunk chunk)
+        public void AddRepeat(RadioChunk chunk)
         {
             LastUpdate = DateTime.Now;
-            lock (Cuts)
-            {
-                if (Cuts.Any(x => x.Number == chunk.CutNumber)) return;
-                Cuts.Add(new Cut(chunk.CutNumber, chunk.Data));
-            }
-        }
-
-        public class Cut
-        {
-            public byte[] Data;
-            public ushort Number;
-
-            public Cut(ushort number, byte[] data)
-            {
-                Number = number;
-                Data = new byte[data.Length];
-                Array.Copy(data, 0, Data, 0, data.Length);
-            }
+            Chunk.WriteNewXorData(chunk.GetXorData());
         }
 
         public byte[] GetPacket()
         {
-            var ret = new byte[CutsAll * SizeData];
-            lock (Cuts)
-            {
-                foreach (var c in Cuts)
-                {
-                    Array.Copy(c.Data, 0, ret, c.Number * SizeData, c.Data.Length);
-                }
-            }
-            LastUpdate = DateTime.MinValue;
-            return ret;
+            return Chunk.GetNormalData();
         }
+    }
+
+    public enum TransferMode
+    {
+        None = 0,
+        MaxRange = 1,
+        VideoEL = 2,
+        VideoL = 3,
+        VideoM = 4,
+        VideoH = 5,
     }
 
     public enum ChunkState
     {
         OK = 0,
         ErrorZvo = 1,
-        ErrorCrc = 2,
+        ErrorHeaderCrc = 2,
         ErrorSize = 3,
     }
 
@@ -242,15 +264,37 @@ public class ZvoRadio
             }
 
             using var udp = new UdpClient();
-            for (var i = 0; i < RadioHeaders.Count; i++)
+            var radio = RadioHeadersMaxRange;
+            switch (send.TransferMode)
+            {
+                default:
+                case TransferMode.None:
+                    return;
+                case TransferMode.MaxRange:
+                    radio = RadioHeadersMaxRange;
+                    break;
+                case TransferMode.VideoEL:
+                    radio = RadioHeadersVideoEL;
+                    break;
+                case TransferMode.VideoL:
+                    radio = RadioHeadersVideoL;
+                    break;
+                case TransferMode.VideoM:
+                    radio = RadioHeadersVideoM;
+                    break;
+                case TransferMode.VideoH:
+                    radio = RadioHeadersVideoH;
+                    break;
+            }
+            for (var i = 0; i < radio.Count; i++)
             {
                 using var ms = new MemoryStream();
-                lock (RadioHeaders)
+                lock (radio)
                 {
-                    ms.Write(RadioHeaders[i]);
+                    ms.Write(radio[i]);
                 }
                 ms.Write(send.GetArray);
-                await udp.SendAsync(ms.ToArray(), ApIp, ApPort, _ct);
+                await udp.SendAsync(ms.ToArray(), apIp, apPort, _ct);
             }
         }
     }
@@ -258,31 +302,98 @@ public class ZvoRadio
     public class RadioChunk // Минимальный пакет радио (для отправки)
     {
         public ChunkState Check { get; } = ChunkState.OK;
+        public TransferMode TransferMode { get; set; } = TransferMode.None;
         public byte PacketNumber { get { return array[4]; } set { array[4] = value; } }
-        public ushort CutNumber { get { return BitConverter.ToUInt16(array, 5); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 5, 2); } }
-        public ushort CutsAll { get { return BitConverter.ToUInt16(array, 7); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 7, 2); } }
-        public byte[] Data { get { return array[SizeHeader..^SizeCrc]; } set { Array.Copy(value, 0, array, SizeHeader, value.Length); } }
-        public byte[] GetArray => array;
+        public ushort DataSize { get { return BitConverter.ToUInt16(array, 5); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 5, 2); } }
+        public bool DataIsValid => CheckXorData();
+        public byte[] Data => GetNormalData();
+        public byte[] GetArray => array[..(SeekStart + DataSize * 2)];
 
-        private readonly byte[] array = new byte[SizeHeader + SizeData + SizeCrc]; // Чанк данных (размером с WifiHeader
+        private readonly byte[] array = new byte[SizeHeader + SizeCrc + 10000]; // Чанк данных c XOR
+
+        public void WriteNormalData(byte[] data)
+        {
+            if (data.Length > array.Length) return; // Размер данных для записи не совпадает
+            for (var i = 0; i < data.Length; i++)
+            {
+                array[SeekStart + i * 2 + 0] = data[i];
+                array[SeekStart + i * 2 + 1] = (byte)(data[i] ^ 0b01010101);
+            }
+        }
+        public byte[] GetNormalData()
+        {
+            var ret = new byte[DataSize];
+            for (var i = 0; i < DataSize; i++)
+            {
+                ret[i] = array[SeekStart + i * 2 + 0];
+            }
+            return ret;
+        }
+
+        public void WriteNewXorData(byte[] data)
+        {
+            for (var i = 0; i < data.Length / 2; i++)
+            {
+                if (data.Length > array.Length) break;
+
+                if ((array[SeekStart + i * 2 + 0] != (byte)(array[SeekStart + i * 2 + 1] ^ 0b01010101)) &&
+                    (data[i * 2 + 0] == (byte)(data[i * 2 + 1] ^ 0b01010101))) // это не валидный кусок данных, но в новом пакете он верен
+                {
+                    array[SeekStart + i * 2 + 0] = data[i * 2 + 0]; // Обновляем данные
+                    array[SeekStart + i * 2 + 1] = data[i * 2 + 1]; // Обновляем данные
+                }
+            }
+        }
+
+        public byte[] GetXorData()
+        {
+            return array[SeekStart..(SeekStart + DataSize * 2)];
+        }
+
+        public bool CheckXorData()
+        {
+            for (var i = 0; i < DataSize; i++)
+            {
+                if (array[SeekStart + i * 2 + 0] != (byte)(array[SeekStart + i * 2 + 1] ^ 0b01010101)) return false;
+            }
+            return true;
+        }
 
         public RadioChunk(byte[] data)
         {
-            if (data.Length != SizeHeader + SizeData + SizeCrc)
+            if (data.Length < SeekStart)
             {
+                Check = ChunkState.ErrorSize;
+                return;
+            }
+
+            var lenData = BitConverter.ToUInt16(data, 5);
+            if (data.Length != SeekStart + lenData * 2)
+            {
+                if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_ERROR, len={data.Length}!={SeekStart + lenData * 2}");
                 Check = ChunkState.ErrorSize;
                 return;
             }
             else
             {
                 Array.Copy(data, array, data.Length);
+                data[2] = 0x00; // обязательная перезапись, т.к. меняется при пересылке
+                data[3] = 0x00; // обязательная перезапись, т.к. меняется при пересылке
             }
+            if (PrintLog) Console.Write(Convert.ToHexString(data));
             if (data[1] != 0x70)
             {
+                if (PrintLog) Console.WriteLine(" ZVO_ERROR");
                 Check = ChunkState.ErrorZvo;
                 return;
             }
-            if (System.IO.Hashing.Crc32.Hash(data[4..(data.Length - SizeCrc)]).SequenceEqual(data[^4..]) == false) Check = ChunkState.ErrorCrc;
+            if (!System.IO.Hashing.Crc32.Hash(data[..SizeHeader]).SequenceEqual(data[SizeHeader..SeekStart]))
+            {
+                if (PrintLog) Console.WriteLine(" CRC_ERROR");
+                Check = ChunkState.ErrorHeaderCrc;
+                return;
+            }
+            if (PrintLog) Console.WriteLine("");
         }
 
         public RadioChunk()
@@ -292,20 +403,15 @@ public class ZvoRadio
             array[1] = 0x70; // Идентификатор ZVO пакета (для идентификации ZVO пакетов)
             array[2] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
             array[3] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
-            array[4] = 0; // Номер пакета UInt8
-            array[5] = 0; array[6] = 0; // Номер куска (UInt16)
-            array[7] = 0; array[8] = 0; // Всего кусков (UInt16)
-
-            // Тело полезной нагрузки SizeData = [SizeHeader..(SizeHeader+SizeData)]
-
-            // CRC32 пакета SizeCrc, считаются по телу [0..(SizeHeader+SizeData)]
-            array[^4] = 0; array[^3] = 0; array[^2] = 0; array[^1] = 0;
+            array[4] = 0; array[5] = 0; // Номер пакета (UInt16)
+            array[6] = 0; array[7] = 0; // Длина данных (UInt16) (всегда кратна 2м, т.к. XOR)
+            array[8] = 0; array[9] = 0; array[10] = 0; array[11] = 0; // CRC32 заголовка [4..8]
+            // Тело полезной нагрузки 
         }
 
         public void CalcAndWriteCrc32()
         {
-            // CRC считается исключительно с 4го байта, т.к. байты 2 и 3 меняются при пересылке
-            Array.Copy(System.IO.Hashing.Crc32.Hash(array[4..(array.Length - SizeCrc)]), 0, array, array.Length - SizeCrc, SizeCrc);
+            Array.Copy(System.IO.Hashing.Crc32.Hash(array[..SizeHeader]), 0, array, SizeHeader, SizeCrc);
         }
     }
 }
