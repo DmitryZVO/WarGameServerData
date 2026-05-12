@@ -100,7 +100,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             DataSize = (ushort)(data.Length + SizeCrc), /// Полезные данные
             TransferMode = mode, // тип отправки
         };
-        chunk.CalcAndWriteCrc32(); // Заполняем CRC32
+        chunk.CalcAndWriteHeaderCrc32(); // Заполняем CRC32
         chunk.WriteNormalData(data); // Пишем нормальные данные
         chunk.CalcAndWriteDataCrc32(); // Заполняем CRC32 данных
         ChunksSend.Enqueue(chunk);
@@ -420,7 +420,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             // Тело полезной нагрузки 
         }
 
-        public void CalcAndWriteCrc32()
+        public void CalcAndWriteHeaderCrc32()
         {
             Array.Copy(System.IO.Hashing.Crc32.Hash(array[..SizeHeader]), 0, array, SizeHeader, SizeCrc);
         }
