@@ -136,6 +136,10 @@ public class GameObjects
             obj = Items.Find(x => x.Id == id);
             if (obj == null)
             {
+                if (Items.Count > 0) 
+                {
+
+                }
                 obj = new GameObject { Id = id, Type = type, Name = IdToName(id) };
                 Items.Add(obj);
             }

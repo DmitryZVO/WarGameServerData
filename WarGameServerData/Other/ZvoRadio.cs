@@ -13,6 +13,7 @@ public class ZvoRadio(string apIp, ushort apPort)
     public static readonly byte SizeHeader = 8;
     public static readonly byte SizeCrc = 4;
 
+    private static readonly byte XorByte = 0b01010101;
     public ulong ApLanPacketsSend { get; private set; }
     public ulong ApLanPacketsRecv { get; private set; }
     public ulong ApRadioPacketsSend { get; private set; }
@@ -96,11 +97,12 @@ public class ZvoRadio(string apIp, ushort apPort)
         var chunk = new RadioChunk
         {
             PacketNumber = PacketNumber, // Номер пакета
-            DataSize = (ushort)data.Length, /// Полезные данные
+            DataSize = (ushort)(data.Length + SizeCrc), /// Полезные данные
             TransferMode = mode, // тип отправки
         };
         chunk.CalcAndWriteCrc32(); // Заполняем CRC32
         chunk.WriteNormalData(data); // Пишем нормальные данные
+        chunk.CalcAndWriteDataCrc32(); // Заполняем CRC32 данных
         ChunksSend.Enqueue(chunk);
 
         if (PrintLog) Console.WriteLine(Convert.ToHexString(chunk.GetArray));
@@ -228,7 +230,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public byte[] GetPacket()
         {
-            return Chunk.GetNormalData();
+            return Chunk.GetNormalData()[..^SizeCrc];
         }
     }
 
@@ -305,11 +307,21 @@ public class ZvoRadio(string apIp, ushort apPort)
         public TransferMode TransferMode { get; set; } = TransferMode.None;
         public byte PacketNumber { get { return array[4]; } set { array[4] = value; } }
         public ushort DataSize { get { return BitConverter.ToUInt16(array, 5); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 5, 2); } }
-        public bool DataIsValid => CheckXorData();
+        public bool DataIsValid => CheckXorData() & DataCrcCheck();
         public byte[] Data => GetNormalData();
         public byte[] GetArray => array[..(SeekStart + DataSize * 2)];
 
         private readonly byte[] array = new byte[SizeHeader + SizeCrc + 10000]; // Чанк данных c XOR
+
+        public bool DataCrcCheck()
+        {
+            var crc32 = System.IO.Hashing.Crc32.Hash(array[SeekStart..(SeekStart + DataSize * 2 - SizeCrc * 2)]);
+            if (array[SeekStart + DataSize * 2 - SizeCrc * 2 + 0 * 2 + 0] != crc32[0]) return false;
+            if (array[SeekStart + DataSize * 2 - SizeCrc * 2 + 1 * 2 + 0] != crc32[1]) return false;
+            if (array[SeekStart + DataSize * 2 - SizeCrc * 2 + 2 * 2 + 0] != crc32[2]) return false;
+            if (array[SeekStart + DataSize * 2 - SizeCrc * 2 + 3 * 2 + 0] != crc32[3]) return false;
+            return true;
+        }
 
         public void WriteNormalData(byte[] data)
         {
@@ -317,7 +329,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             for (var i = 0; i < data.Length; i++)
             {
                 array[SeekStart + i * 2 + 0] = data[i];
-                array[SeekStart + i * 2 + 1] = (byte)(data[i] ^ 0b01010101);
+                array[SeekStart + i * 2 + 1] = (byte)(data[i] ^ XorByte);
             }
         }
         public byte[] GetNormalData()
@@ -336,8 +348,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             {
                 if (data.Length > array.Length) break;
 
-                if ((array[SeekStart + i * 2 + 0] != (byte)(array[SeekStart + i * 2 + 1] ^ 0b01010101)) &&
-                    (data[i * 2 + 0] == (byte)(data[i * 2 + 1] ^ 0b01010101))) // это не валидный кусок данных, но в новом пакете он верен
+                if ((data[i * 2 + 0] == (byte)(data[i * 2 + 1] ^ XorByte))) // верный кусок данных
                 {
                     array[SeekStart + i * 2 + 0] = data[i * 2 + 0]; // Обновляем данные
                     array[SeekStart + i * 2 + 1] = data[i * 2 + 1]; // Обновляем данные
@@ -354,7 +365,7 @@ public class ZvoRadio(string apIp, ushort apPort)
         {
             for (var i = 0; i < DataSize; i++)
             {
-                if (array[SeekStart + i * 2 + 0] != (byte)(array[SeekStart + i * 2 + 1] ^ 0b01010101)) return false;
+                if (array[SeekStart + i * 2 + 0] != (byte)(array[SeekStart + i * 2 + 1] ^ XorByte)) return false;
             }
             return true;
         }
@@ -412,6 +423,15 @@ public class ZvoRadio(string apIp, ushort apPort)
         public void CalcAndWriteCrc32()
         {
             Array.Copy(System.IO.Hashing.Crc32.Hash(array[..SizeHeader]), 0, array, SizeHeader, SizeCrc);
+        }
+        public void CalcAndWriteDataCrc32()
+        {
+            var crc32 = System.IO.Hashing.Crc32.Hash(array[SeekStart..(SeekStart + DataSize * 2 - SizeCrc * 2)]);
+            for (var i = 0; i < SizeCrc; i++)
+            {
+                array[SeekStart + DataSize * 2 - SizeCrc * 2 + i * 2 + 0] = crc32[i];
+                array[SeekStart + DataSize * 2 - SizeCrc * 2 + i * 2 + 1] = (byte)(crc32[i] ^ XorByte);
+            }
         }
     }
 }
