@@ -316,10 +316,10 @@ public class ZvoRadio(string apIp, ushort apPort)
         public bool DataCrcCheck()
         {
             var crc32 = System.IO.Hashing.Crc32.Hash(array[SeekStart..(SeekStart + DataSize * 2 - SizeCrc * 2)]);
-            if (array[SeekStart + DataSize * 2 - SizeCrc * 2 + 0 * 2 + 0] != crc32[0]) return false;
-            if (array[SeekStart + DataSize * 2 - SizeCrc * 2 + 1 * 2 + 0] != crc32[1]) return false;
-            if (array[SeekStart + DataSize * 2 - SizeCrc * 2 + 2 * 2 + 0] != crc32[2]) return false;
-            if (array[SeekStart + DataSize * 2 - SizeCrc * 2 + 3 * 2 + 0] != crc32[3]) return false;
+            for (var i = 0; i < crc32.Length; i++)
+            {
+                if (array[SeekStart + DataSize * 2 - SizeCrc * 2 + i * 2 + 0] != crc32[i]) return false;
+            }
             return true;
         }
 
@@ -427,7 +427,7 @@ public class ZvoRadio(string apIp, ushort apPort)
         public void CalcAndWriteDataCrc32()
         {
             var crc32 = System.IO.Hashing.Crc32.Hash(array[SeekStart..(SeekStart + DataSize * 2 - SizeCrc * 2)]);
-            for (var i = 0; i < SizeCrc; i++)
+            for (var i = 0; i < crc32.Length; i++)
             {
                 array[SeekStart + DataSize * 2 - SizeCrc * 2 + i * 2 + 0] = crc32[i];
                 array[SeekStart + DataSize * 2 - SizeCrc * 2 + i * 2 + 1] = (byte)(crc32[i] ^ XorByte);
