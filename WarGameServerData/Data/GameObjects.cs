@@ -63,8 +63,8 @@ public class GameObjects
         req += (uint)(obj.Requests.Command ? 0b00000000000100000000000000000000 : 0);
         Array.Copy(BitConverter.GetBytes(req), 0, data, 0, 4);
 
-        await new UdpClient().SendAsync(data, obj.Ip, PortServerRequests, new CancellationTokenSource(100).Token);
-        Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(data, ZvoRadio.TransferMode.MaxRange);
+        if (obj.Telem.UseMesh) await new UdpClient().SendAsync(data, obj.Ip, PortServerRequests, new CancellationTokenSource(100).Token);
+        if (obj.Telem.UseZvo) Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(data, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += data.Length;
     }
     public static async Task SendCommandAsync(GameObject obj)
@@ -75,8 +75,8 @@ public class GameObjects
         var seek = 0; // Смещение в пакете
         Array.Copy(BitConverter.GetBytes(obj.Requests.Commands.Count > 0 ? obj.Requests.Commands.Dequeue() : 0), 0, data, seek, 4);
 
-        await new UdpClient().SendAsync(data, obj.Ip, PortServerGetCommand, new CancellationTokenSource(100).Token);
-        Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(data, ZvoRadio.TransferMode.MaxRange);
+        if (obj.Telem.UseMesh) await new UdpClient().SendAsync(data, obj.Ip, PortServerGetCommand, new CancellationTokenSource(100).Token);
+        if (obj.Telem.UseZvo) Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(data, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += data.Length;
     }
 
@@ -97,9 +97,9 @@ public class GameObjects
         data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[6])) * 500 + 500) / 5); seek += 1;
         data[seek] = (byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[7])) * 500 + 500) / 5);
 
-        var send = await new UdpClient().SendAsync(data, obj.Ip, PortServerRcRewrite, new CancellationTokenSource(100).Token);
-        Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(data, ZvoRadio.TransferMode.MaxRange);
-        obj.Telem.MBitServerOutBytesCounter += send;
+        if (obj.Telem.UseMesh) await new UdpClient().SendAsync(data, obj.Ip, PortServerRcRewrite, new CancellationTokenSource(100).Token);
+        if (obj.Telem.UseZvo) Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(data, ZvoRadio.TransferMode.MaxRange);
+        obj.Telem.MBitServerOutBytesCounter += data.Length;
     }
     public static string IdToName(int id)
     {
@@ -180,6 +180,8 @@ public class GameObjects
                     obj.Telem.FuelTemp = (sbyte)data[seek]; seek += 1; // Температура в баке
                     obj.Telem.AliveCheck = BitConverter.ToUInt64(data, seek); seek += 8;
                     obj.Telem.EnableCheck = BitConverter.ToUInt64(data, seek); seek += 8;
+                    obj.Telem.UseMesh = (obj.Telem.EnableCheck & 0b0000000000000000000000000000010000000000000000000000000000000000) > 0;
+                    obj.Telem.UseZvo = (obj.Telem.EnableCheck & 0b0000000000000000000000000000100000000000000000000000000000000000) > 0;
                     obj.Telem.QualityMeshGroundToWater = BitConverter.ToSingle(data, seek); seek += 4;
                     obj.Telem.QualityZvoGroundToWater = BitConverter.ToSingle(data, seek); seek += 4;
                     obj.Telem.QueueZvoWaterToGroundSend = data[seek]; seek += 1;
@@ -549,6 +551,8 @@ public class GameObjectTelem // Параметры телеметрии
     public ulong EnableCheck { get; set; } // статусы использования/включения устройства
     [JsonIgnore] public int MBitServerInBytesCounter { get; set; } // Счетчик приема данных в байтах
     [JsonIgnore] public int MBitServerOutBytesCounter { get; set; } // Счетчик передачи данных в байтах
+    [JsonIgnore] public bool UseMesh { get; set; } // Использование MESH связи
+    [JsonIgnore] public bool UseZvo { get; set; } // Использование ZVO связи
 }
 public class RcChannelsForWrite
 {
