@@ -119,9 +119,9 @@ public class GameObjects
 
     public async Task ParseUdpPacketAsync(string sender, byte[] dataZip)
     {
-        var packType = dataZip[0];
-        var useZip = (dataZip[1] & 0b10000000) > 0;
-        var type = (dataZip[1] & 0b01110000) >> 4;
+        var packType = dataZip[0] & 0b01111111;
+        var useZip = (dataZip[0] & 0b10000000) > 0;
+        var type = (dataZip[1] & 0b11110000) >> 4;
         var id = dataZip[1] & 0b00001111;
 
         var data = useZip ? ZvoRadio.DecompressZip(dataZip[2..]) : dataZip[2..];
