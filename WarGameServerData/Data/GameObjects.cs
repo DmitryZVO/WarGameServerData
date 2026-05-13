@@ -121,12 +121,14 @@ public class GameObjects
 
     public async Task ParseUdpPacketAsync(string sender, byte[] dataZip)
     {
+
         var packType = dataZip[0] & 0b01111111;
         var useZip = (dataZip[0] & 0b10000000) > 0;
         var type = (dataZip[1] & 0b11110000) >> 4;
         var id = dataZip[1] & 0b00001111;
 
         var data = useZip ? ZvoRadio.DecompressZip(dataZip[2..]) : dataZip[2..];
+
 
         // Находим или создаем новый игровой объект
         GameObject? obj;
@@ -214,7 +216,6 @@ public class GameObjects
             case 1 when packType == 0x08: // пакет с куском видео
                 {
                     var frameNumber = data[0]; // Номер кадра
-                    //var frameCut = data[1]; // Номер куска
                     var chunkNumber = BitConverter.ToUInt16(data, 2) & 0b0111111111111111; // Номер чанка-декодера
 
                     var chunk = obj.CamFrames.ToList().Find(x => x.H264ChunkDecoders.Any(y => y.Number == chunkNumber))?.H264ChunkDecoders.Find(y=>y.Number == chunkNumber);
@@ -416,14 +417,13 @@ public class H264ChunkDecoder
 
     public int Number { get; } // Номер чанка
     public long UdpFrameNumber { get; set; } // Текущий номер кадра (для сборки)
+    public long UdpFrameLastNumber { get; set; } = -1; // Текущий номер кадра (для сборки)
+    public long UdpFrameLastCutNumber { get; set; } = -1; // Текущий номер куска кадра (для сборки)
     public MemoryStream UdpFrame { get; set; } // Поток кадра из udp собранный из кусков
     public bool IsUpdate => (DateTime.Now - LastUpdate).TotalMilliseconds <= 30; // Проверка на обновление чанка
 
     private readonly H264Decoder _decoder;
     private DateTime LastUpdate { get; set; } = DateTime.MinValue;
-
-    private List<byte> RecivedCuts { get; set; } = [];
-
 
     public H264ChunkDecoder(CameraFrame camera, int number)
     {
@@ -449,36 +449,37 @@ public class H264ChunkDecoder
         var cut = data[1]; // Номер куска
         var endCut = BitConverter.ToUInt16(data, 2) & 0b1000000000000000;
 
-        if (Number == 2000)
-        {
-            Console.WriteLine($"cut={cut:0}, number={frameNumber}, len={data.Length - 4}, final={endCut > 0}");
-        }
-
-        //if (frameNumber != UdpFrameNumber && UdpFrame.Length > 0) // Новый кадр, пора пересоздавать матрицу кадра
-        //{
-        //    DecodeChunk();
-        //}
+        //if (Number == 2010) Console.Write($"recv! {frameNumber:0}, cut {cut:0}, end={endCut > 0}");
 
         lock (this)
         {
-            if (frameNumber == UdpFrameNumber && RecivedCuts.Any(x => x == cut)) return; // такой кусок уже был (пропускаем повторы)
-            if (frameNumber > UdpFrameNumber)
+            if (frameNumber == UdpFrameLastNumber)
             {
-                RecivedCuts = [];
-                if (UdpFrame.Length > 0)
-                {
-                    DecodeChunk();
-                }
+                //if (Number == 2010) Console.WriteLine($" double frame!");
+                return;
+            }
+            if (cut == UdpFrameLastCutNumber)
+            {
+                //if (Number == 2010) Console.WriteLine($" double cut!");
+                return;
+            }
+
+            if (frameNumber != UdpFrameNumber)
+            {
+                UdpFrame = new MemoryStream();
+                UdpFrameLastNumber = UdpFrameNumber;
             }
             UdpFrameNumber = frameNumber;
+            UdpFrameLastCutNumber = cut;
             UdpFrame.Write(data, 4, data.Length - 4); // Записываем кусок данных
-        
-            RecivedCuts.Add(cut); // Запоминаем добавленный кусок
         }
-        
+
         if (endCut > 0) // Это финальный кусок, пора пересоздавать матрицу кадра
         {
+            UdpFrameLastNumber = frameNumber;
+            UdpFrameLastCutNumber = -1;
             DecodeChunk();
+            //if (Number == 2010) Console.WriteLine($" OK");
         }
     }
 
@@ -492,8 +493,6 @@ public class H264ChunkDecoder
                 UdpFrame = new MemoryStream();
                 return;
             }
-
-            RecivedCuts = [];
 
             var rgb = new RgbImage(ImageFormat.Rgb, BlockSize.Width, BlockSize.Height);
             if (_decoder.Decode(dataArr, 0, dataArr.Length, true, out var _, ref rgb) != false)

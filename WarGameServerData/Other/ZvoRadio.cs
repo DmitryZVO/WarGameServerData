@@ -8,7 +8,7 @@ namespace WarGameServerData.Other;
 public class ZvoRadio(string apIp, ushort apPort)
 {
     public static bool PrintLog => false;
-    public static int TimeOutCreateMs => 300;
+    public static int TimeOutCreateMs => 200;    
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16);
 
     public static readonly byte SizeHeader = 8;
@@ -27,7 +27,7 @@ public class ZvoRadio(string apIp, ushort apPort)
     public ulong ApLanSendQueue { get; private set; }
     public ulong ApRadioSendQueue { get; private set; }
 
-    public Func<byte[], Task> OnGetPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
+    public Action<byte[]> OnGetPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
 
     private readonly List<byte[]> RadioHeadersMaxRange = [];
     private readonly List<byte[]> RadioHeadersVideoEL = [];
@@ -143,6 +143,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
             if (data.Length < SeekStart + SizeDataCrc32) continue; // Огрызок пакета
             var dataChunk = data[..^4]; // чанк ZVO
+
             var chunk = new RadioChunk(dataChunk);
             if (chunk.Check != ChunkState.OK) continue;
 
@@ -192,25 +193,25 @@ public class ZvoRadio(string apIp, ushort apPort)
         while (!_ct.IsCancellationRequested)
         {
             var removed = 0;
-            RecvPacket? packet;
+            List<RecvPacket> packets;
 
             lock (PacketsRecv)
             {
-                packet = PacketsRecv.Find(x => x.OK);
+                packets = PacketsRecv.FindAll(x => x.OK);
             }
 
-            if (packet != null)
+            foreach (var i in packets)
             {
-                await OnGetPacketAsync.Invoke(packet.GetPacket());
+                OnGetPacketAsync.Invoke(i.GetPacket());
             }
 
             lock (PacketsRecv)
             {
-                if (packet != null)
+                foreach (var i in packets)
                 {
-                    PacketsRecv.Remove(packet);
+                    removed += PacketsRecv.Remove(i) ? 1 : 0;
                 }
-                removed = PacketsRecv.RemoveAll(x => (DateTime.Now - x.LastUpdate).TotalMilliseconds >= TimeOutCreateMs);
+                removed += PacketsRecv.RemoveAll(x => (DateTime.Now - x.LastUpdate).TotalMilliseconds >= TimeOutCreateMs);
             }
 
             if (removed == 0) await Task.Delay(10, _ct);
@@ -222,12 +223,23 @@ public class ZvoRadio(string apIp, ushort apPort)
         public DateTime LastUpdate = DateTime.Now;
         public bool OK => Chunk.DataIsValid;
         public byte Number { get; set; } = chunk.PacketNumber;
-        private RadioChunk Chunk { get; } = chunk;
+        public RadioChunk Chunk { get; set; } = chunk;
 
-        public void AddRepeat(RadioChunk chunk)
+        public void AddRepeat(RadioChunk repeat)
         {
             LastUpdate = DateTime.Now;
-            Chunk.WriteNewXorData(chunk.GetXorData());
+
+            if (Chunk.DataIsValid) return;
+
+            if (repeat.DataIsValid)
+            {
+                Chunk = repeat;
+                return;
+            }
+
+            //var v = Chunk.DataIsValid;
+            Chunk.WriteNewXorData(repeat.GetXorData());
+            //Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} old={v}, rep={repeat.DataIsValid}, new={Chunk.DataIsValid}");
         }
 
         public byte[] GetPacket()
@@ -371,7 +383,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public bool DataCrc32Check()
         {
-            var crc32 = CRC32(array[..(SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2)]);
+            var crc32 = CRC32(array[SeekStart..(SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2)]);
             for (var i = 0; i < crc32.Length; i++)
             {
                 if (array[SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2 + i * 2 + 0] != crc32[i]) return false;
@@ -406,6 +418,10 @@ public class ZvoRadio(string apIp, ushort apPort)
 
                 if ((data[i * 2 + 0] == (byte)(data[i * 2 + 1] ^ XorByte))) // верный кусок данных
                 {
+                    if (array[SeekStart + i * 2 + 0] != data[i * 2 + 0] | array[SeekStart + i * 2 + 1] != data[i * 2 + 1])
+                    {
+
+                    }
                     array[SeekStart + i * 2 + 0] = data[i * 2 + 0]; // Обновляем данные
                     array[SeekStart + i * 2 + 1] = data[i * 2 + 1]; // Обновляем данные
                 }
@@ -433,7 +449,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public void CalcAndWriteDataCrc32()
         {
-            var crc32 = CRC32(array[..(SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2)]);
+            var crc32 = CRC32(array[SeekStart..(SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2)]);
             for (var i = 0; i < crc32.Length; i++)
             {
                 array[SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2 + i * 2 + 0] = crc32[i];
