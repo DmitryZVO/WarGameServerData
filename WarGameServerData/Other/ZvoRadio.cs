@@ -13,7 +13,7 @@ public class ZvoRadio(string apIp, ushort apPort)
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
     public const byte SizeDataCrc32 = 4; // Размер CRC32 блока данных
-    public const byte SizeBlockXor = 3; // Какими блоками кодируем XOR для восстановления
+    public const byte SizeBlockXor = 16; // Какими блоками кодируем XOR для восстановления
     public const int DataCrc32SizeXored = 8; // CRC32 данных кодируется каждый байт + CRC8
     public static byte BigSizeBlockXor => (SizeBlockXor + 1); // Общий размер блока XOR вместе с байтами CRC8
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16); // Стартовое смещение от начала заголовка
@@ -112,12 +112,6 @@ public class ZvoRadio(string apIp, ushort apPort)
         chunk.CalcAndWriteHeaderCrc16(); // Заполняем CRC16 заголовка
         chunk.WriteNormalData(data); // Пишем нормальные данные
         chunk.CalcAndWriteDataCrc32(); // Заполняем CRC32 данных
-        var a = chunk.DataIsValid;
-        var b = chunk.Data;
-        var c = chunk.GetNormalData();
-        var d = chunk.Check;
-        var e = chunk.DataSizeXored;
-        var f = chunk.GetArray;
         ChunksSend.Enqueue(chunk);
 
         if (PrintLog) Console.WriteLine(Convert.ToHexString(chunk.GetArray));
@@ -170,7 +164,7 @@ public class ZvoRadio(string apIp, ushort apPort)
                 else
                 {
                     //var thisDouble = packet.Chunk.GetXorData().SequenceEqual(chunk.GetXorData());
-                    //Console.WriteLine($"{DateTime.Now:yyyy-mm-dd HH:mm:ss.ffff} add repeat packet {chunk.PacketNumber}, valid={chunk.DataIsValid}, double={thisDouble}");
+                    //Console.WriteLine($"{DateTime.Now:yyyy-mm-dd HH:mm:ss.ffff} add repeat packet {chunk.PacketNumber}, valid={chunk.DataIsValid}");
                     packet.AddRepeat(chunk);
                 }
             }
@@ -254,7 +248,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 
             //var v = Chunk.DataIsValid;
             Chunk.WriteNewXorData(repeat.GetXorData());
-            //Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} old={v}, rep={repeat.DataIsValid}, new={Chunk.DataIsValid}");
+            //Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} {Number} old={v}, rep={repeat.DataIsValid}, new={Chunk.DataIsValid}");
         }
 
         public byte[] GetPacket()
