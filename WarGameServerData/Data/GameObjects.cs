@@ -135,6 +135,8 @@ public class GameObjects
             {
                 if (Items.Count > 0) 
                 {
+                    Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} CRC16 COLLISION!");
+                    return; // КОСТЫЛЬ!!! БЫТЬ НЕ ДОЛЖНО
                 }
                 obj = new GameObject { Id = id, Type = type, Name = IdToName(id) };
                 Items.Add(obj);
