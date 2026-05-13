@@ -3,16 +3,13 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenCvSharp;
 using System.Net.Sockets;
 using System.Text.Json.Serialization;
-using WarGameServerData.Model;
 using WarGameServerData.Other;
 
 namespace WarGameServerData.Data;
 
 public class GameObjects
 {
-    public readonly static int PortServerRequests = 8000; // Входящий порт от сервера для статуса запросов
-    public readonly static int PortServerRcRewrite = 8001; // Входящий порт от сервера для перезаписи пульта
-    public readonly static int PortServerGetCommand = 8002; // Входящий порт от сервера для запроса команд на исполнение
+    public readonly static int PortInFromServer = 8000; // Входящий порт для пакетов от сервера
 
     public async void SendRequestsAsync(CancellationToken ct = default)
     {
@@ -39,6 +36,7 @@ public class GameObjects
         if (obj.Ip.Equals(string.Empty)) return;
 
         using var data = new MemoryStream();
+        data.WriteByte(0x00 + 0b00000000); // Пакет Heartbeat
         uint req = 0;
         req += (uint)(obj.Requests.Cameras[0] ?   0b00000000000000000000000000000001 : 0);
         req += (uint)(obj.Requests.Cameras[1] ?   0b00000000000000000000000000000010 : 0);
@@ -64,7 +62,7 @@ public class GameObjects
         data.Write(BitConverter.GetBytes(req));
         var send = data.ToArray();
 
-        if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortServerRequests, new CancellationTokenSource(100).Token);
+        if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
         if (obj.Telem.UseZvo) Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send.Length;
     }
@@ -72,11 +70,15 @@ public class GameObjects
     {
         if (obj.Ip.Equals(string.Empty)) return;
 
+        var command = obj.Requests.Commands.Count > 0 ? obj.Requests.Commands.Dequeue() : 0;
+        if (command == 0) return;
+
         using var data = new MemoryStream();
-        data.Write(BitConverter.GetBytes(obj.Requests.Commands.Count > 0 ? obj.Requests.Commands.Dequeue() : 0));
+        data.WriteByte(0x04 + 0b00000000); // Пакет с командой
+        data.Write(BitConverter.GetBytes(command));
         var send = data.ToArray();
 
-        if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortServerGetCommand, new CancellationTokenSource(100).Token);
+        if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
         if (obj.Telem.UseZvo) Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send.Length;
     }
@@ -87,7 +89,7 @@ public class GameObjects
         if (obj.RcForWrite.Length <= number) return;
 
         using var data = new MemoryStream();
-
+        data.WriteByte(0x02 + 0b00000000); // Пакет с перезаписью пульта
         data.WriteByte(number); // номер пульта
         data.WriteByte((byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[0])) * 500 + 500) / 5));
         data.WriteByte((byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[1])) * 500 + 500) / 5));
@@ -99,7 +101,7 @@ public class GameObjects
         data.WriteByte((byte)((Math.Min(1.0f, Math.Max(-1.0f, obj.RcForWrite[number].Values[7])) * 500 + 500) / 5));
         var send = data.ToArray();
 
-        if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortServerRcRewrite, new CancellationTokenSource(100).Token);
+        if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
         if (obj.Telem.UseZvo) Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send.Length;
     }
@@ -135,8 +137,8 @@ public class GameObjects
             {
                 if (Items.Count > 0) 
                 {
-                    Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} CRC16 COLLISION!");
-                    return; // КОСТЫЛЬ!!! БЫТЬ НЕ ДОЛЖНО
+                    Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} CRC16 COLLISION!"); // КОСТЫЛЬ!!! БЫТЬ НЕ ДОЛЖНО
+                    return; 
                 }
                 obj = new GameObject { Id = id, Type = type, Name = IdToName(id) };
                 Items.Add(obj);
@@ -169,19 +171,30 @@ public class GameObjects
                     obj.Telem.RcChannels[7] = (ushort)(data[seek] * 5 + 1000); seek += 1;
                     obj.Telem.MBitObjectIn = BitConverter.ToUInt16(data, seek) / 1000.0f; seek += 2;
                     obj.Telem.MBitObjectOut = BitConverter.ToUInt16(data, seek) / 1000.0f; seek += 2;
-                    obj.Telem.PingToServer = BitConverter.ToUInt16(data, seek); seek += 2; // Пинг до сервера
-                    obj.Telem.VideoFps = data[seek]; seek += 1;
+                    obj.Telem.PingToServer = data[seek]; seek += 1; // Пинг до сервера
                     obj.Telem.VideoQuality = data[seek]; seek += 1;
                     Array.Copy(data, seek, obj.Telem.CanEngineBits, 0, 5); seek += 5;
-                    obj.Telem.FuelVcurr = BitConverter.ToUInt16(data, seek); seek += 2; // Объем топлива в баке
+                    obj.Telem.FuelVcurr = (ushort)(data[seek] * 3); seek += 1; // Объем топлива в баке
                     obj.Telem.FuelLcurr = data[seek]; seek += 1; // Уровень топлива в баке (0..255)
                     obj.Telem.FuelTemp = (sbyte)data[seek]; seek += 1; // Температура в баке
-                    obj.Telem.AliveCheck = BitConverter.ToUInt64(data, seek); seek += 8;
-                    obj.Telem.EnableCheck = BitConverter.ToUInt64(data, seek); seek += 8;
+                    var tempAlive = new byte[8];
+                    tempAlive[0] = data[seek]; seek += 1;
+                    tempAlive[1] = data[seek]; seek += 1;
+                    tempAlive[2] = data[seek]; seek += 1;
+                    tempAlive[3] = data[seek]; seek += 1;
+                    tempAlive[4] = data[seek]; seek += 1;
+                    obj.Telem.AliveCheck = BitConverter.ToUInt64(tempAlive, 0);
+                    var tempEnable = new byte[8];
+                    tempEnable[0] = data[seek]; seek += 1;
+                    tempEnable[1] = data[seek]; seek += 1;
+                    tempEnable[2] = data[seek]; seek += 1;
+                    tempEnable[3] = data[seek]; seek += 1;
+                    tempEnable[4] = data[seek]; seek += 1;
+                    obj.Telem.EnableCheck = BitConverter.ToUInt64(tempEnable, 0);
                     obj.Telem.UseMesh = (obj.Telem.EnableCheck & 0b0000000000000000000000000000010000000000000000000000000000000000) > 0;
                     obj.Telem.UseZvo = (obj.Telem.EnableCheck & 0b0000000000000000000000000000100000000000000000000000000000000000) > 0;
-                    obj.Telem.QualityMeshGroundToWater = BitConverter.ToSingle(data, seek); seek += 4;
-                    obj.Telem.QualityZvoGroundToWater = BitConverter.ToSingle(data, seek); seek += 4;
+                    obj.Telem.QualityMeshGroundToWater = data[seek] / 10.0f; seek += 1;
+                    obj.Telem.QualityZvoGroundToWater = data[seek] / 10.0f; seek += 1;
                     obj.Telem.QueueZvoWaterToGroundSend = data[seek]; seek += 1;
                     obj.Telem.MbitsZvoWaterToGroundSend = BitConverter.ToUInt16(data, seek) / (float)ushort.MaxValue; seek += 2;
                     obj.Telem.MbitsZvoWaterToGroundRecv = BitConverter.ToUInt16(data, seek) / (float)ushort.MaxValue; seek += 2;
@@ -195,6 +208,17 @@ public class GameObjects
             case 1 when packType == 0x04: // пакет запроса команды на исполнение
                 {
                     await SendCommandAsync(obj);
+                    return;
+                }
+            case 1 when packType == 0x08: // пакет с куском видео
+                {
+                    var frameNumber = data[0]; // Номер кадра
+                    var frameCut = (byte)(data[1] & 0b01111111); // Номер куска
+                    var chunkNumber = BitConverter.ToUInt16(data, 2); // Номер чанка-декодера
+
+                    var chunk = obj.CamFrames.ToList().Find(x => x.H264ChunkDecoders.Any(y => y.Number == chunkNumber))?.H264ChunkDecoders.Find(y=>y.Number == chunkNumber);
+                    if (chunk == null) return; // Чанк не найден
+                    chunk.ReadChunkPacket(data);
                     return;
                 }
 
@@ -268,8 +292,6 @@ public class CameraFrame
         {
             H264ChunkDecoders.Add(new(this, i));
         }
-        H264ChunkDecoders.ForEach(x => x.StartAsync());
-        
         UpdateCutFrameAsync();
     }
 
@@ -397,16 +419,14 @@ public class H264ChunkDecoder
     public bool IsUpdate => (DateTime.Now - LastUpdate).TotalMilliseconds <= 30; // Проверка на обновление чанка
 
     private readonly H264Decoder _decoder;
-    private readonly CameraFrame _camera;
     private DateTime LastUpdate { get; set; } = DateTime.MinValue;
 
 
     public H264ChunkDecoder(CameraFrame camera, int number)
     {
-        Number = number;
+        Number = camera.Number * 1000 + number;
         UdpFrame = new MemoryStream();
 
-        _camera = camera;
         _decoder = new();
 
         // Инициализация декодера
@@ -420,71 +440,17 @@ public class H264ChunkDecoder
         _decoder.Initialize(decParam);
     }
 
-    public async void StartAsync(CancellationToken ct = default)
+    public void ReadChunkPacket(byte[] data)
     {
-        // Читаем порт для чанков
-        var connect = new UdpClient(LanIn.UdpPortCamera + _camera.Number * 1000 + Number); // Конкретный порт под конкретный чанк
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                // Получение данных
-                var result = await connect.ReceiveAsync(ct);
-                var client = result.RemoteEndPoint;
-                var dataZip = result.Buffer;
-                // Парсинг входящего пакета
-
-                ParseUdpChunkPacket(ZvoRadio.DecompressZip(dataZip));
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.ToString());
-            }
-        }
-        connect.Close();
-    }
-
-    public void ParseUdpChunkPacket(byte[] data)
-    {
-        var retEmpty = Array.Empty<byte>();
-
-        // Проверка на пакет ZVO
-        const int headLen = 6;
-        if (data.Length < headLen) return; // ZVO пакет не может быть менее 6 байт
-        var seek = 0;
-        var id = data[seek]; seek += 1; // ID объекта
-        var dataLen = (int)BitConverter.ToUInt16(data, seek); seek += 2; // длинна полезных данных
-        if (data.Length != dataLen + headLen)
-        {
-            return; // Динна пакета не совпадает
-        }
-
-        if (dataLen <= 0) return; // Полезные данные отсутствуют
-
-        // Находим или создаем новый игровой объект
-        GameObject? obj;
-        var time = DateTime.Now;
-        var items = Core.IoC.Services.GetRequiredService<GameObjects>().Items;
-        lock (items)
-        {
-            obj = items.Find(x => x.Id == id);
-        }
-        if (obj == null) return; // Такого объекта у нас нет
-                                 // Обновляем телеметрические данные
-        obj.LastTime = time;
-        obj.Telem.MBitServerInBytesCounter += data.Length; // Обновляем счетчик принятых байт на сервер от объекта
-
-        var frameNumber = data[seek]; seek += 1; // Номер кадра
-        var frameCut = data[seek]; seek += 1; // Номер куска
-        var frameCutAll = data[seek]; seek += 1; // Всего кусков
+        var frameNumber = data[0]; // Номер кадра
 
         if (UdpFrameNumber != frameNumber && UdpFrame.Length > 0) // Новый кадр, пора пересоздавать матрицу кадра
         {
             DecodeChunk();
         }
         UdpFrameNumber = frameNumber;
-        UdpFrame.Write(data, seek, dataLen); // Записываем кусок данных
-        if (frameCut == frameCutAll) // Это финальный кусок, пора пересоздавать матрицу кадра
+        UdpFrame.Write(data, 4, data.Length - 4); // Записываем кусок данных
+        if ((data[1] & 0b10000000) > 0) // Это финальный кусок, пора пересоздавать матрицу кадра
         {
             DecodeChunk();
         }
@@ -539,7 +505,6 @@ public class GameObjectTelem // Параметры телеметрии
     public byte FuelLcurr { get; set; } // Уровень топлива (0..255)
     public ushort FuelVcurr { get; set; } // Объем топлива в литрах
     public byte CommandCount { get; set; } // Количество команд под исполнение
-    public byte VideoFps { get; set; } // FPS видео с камер (0->5)
     public byte VideoQuality { get; set; } // Качество видео с камер (0->5)
     public byte[] CanEngineBits { get; set; } = new byte[5]; // статусы движка
     public ulong AliveCheck { get; set; } // статусы компонентов устройства

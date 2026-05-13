@@ -7,7 +7,6 @@ namespace WarGameServerData.Model;
 
 public class LanIn
 {
-    public const int UdpPortCamera = 30000; // Штатный порт UDP для получения потока H264 от камер игровых объектов
     public const int UdpPortHb = 7777; // Штатный порт UDP для получения Heartbeat от игровых объектов (с отправкой пакетов-request в ответ)
     public const int UdpPortZvo = 2222; // Штатный порт UDP для получения пакетов от радио ZVO
 
