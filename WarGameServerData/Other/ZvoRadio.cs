@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Net.Sockets;
+using WarGameServerData.Model;
 
 namespace WarGameServerData.Other;
 
@@ -29,8 +30,6 @@ public class ZvoRadio(string apIp, ushort apPort)
     public ulong ApLanSendQueue { get; private set; }
     public ulong ApRadioSendQueue { get; private set; }
 
-    public Action<byte[]> OnGetPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
-
     private readonly List<byte[]> RadioHeadersMaxRange = [];
     private readonly List<byte[]> RadioHeadersVideoEL = [];
     private readonly List<byte[]> RadioHeadersVideoL = [];
@@ -40,7 +39,7 @@ public class ZvoRadio(string apIp, ushort apPort)
     private byte PacketNumber = 0; // циклический номер пакета
 
     private readonly ConcurrentQueue<RadioChunk> ChunksSend = new(); // Чанки для оправки
-    private readonly List<RecvPacket> PacketsRecv = []; // Собраные пакеты
+    private RecvPacket? PacketsRecv; // Собраные пакеты
     private readonly CancellationToken _ct = new();
 
     public static int SizeRoundedData(int data)
@@ -123,12 +122,11 @@ public class ZvoRadio(string apIp, ushort apPort)
         ThreadSendAsync();
         ThreadRecvAsync();
         ThreadRecvApAsync();
-        ThreadRecvActionAsync();
 
         while (!_ct.IsCancellationRequested)
         {
             await Task.Delay(1000, _ct);
-            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: ForSend={ChunksSend.Count:0}, PacketsRecv={PacketsRecv.Count:0}");
+            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: ForSend={ChunksSend.Count:0}, PacketsRecv={0}");
         }
     }
 
@@ -153,20 +151,21 @@ public class ZvoRadio(string apIp, ushort apPort)
             var chunk = new RadioChunk(dataChunk);
             if (chunk.Check != ChunkState.OK) continue;
 
-            lock (PacketsRecv)
+            PacketsRecv ??= new RecvPacket(chunk);
+
+            if (chunk.PacketNumber == PacketsRecv.Number) // Это повтор
             {
-                var packet = PacketsRecv.Find(x => x.Number == chunk.PacketNumber); // Ищем пакеты с таким номером
-                if (packet == null)
+                if (PacketsRecv.OK) continue; // Игнорируем повторы при прошлом валидном пакете 
+                PacketsRecv.Chunk.WriteNewXorData(chunk.GetXorData()); // Пробуем восстановить пакет
+            }
+            else // Пришел новый пакет, пора отправлять старый
+            {
+                if (PacketsRecv.OK) // Если пакет валиден - отправляем!
                 {
-                    //Console.WriteLine($"{DateTime.Now:yyyy-mm-dd HH:mm:ss.ffff} add new packet {chunk.PacketNumber}, valid={chunk.DataIsValid}");
-                    PacketsRecv.Add(new RecvPacket(chunk));
+                    var pack = PacketsRecv.Chunk.GetNormalData();
+                    await new UdpClient().SendAsync(pack, "127.0.0.1", LanIn.UdpPortHb);
                 }
-                else
-                {
-                    //var thisDouble = packet.Chunk.GetXorData().SequenceEqual(chunk.GetXorData());
-                    //Console.WriteLine($"{DateTime.Now:yyyy-mm-dd HH:mm:ss.ffff} add repeat packet {chunk.PacketNumber}, valid={chunk.DataIsValid}");
-                    packet.AddRepeat(chunk);
-                }
+                PacketsRecv = new RecvPacket(chunk);
             }
         }
     }
@@ -197,64 +196,12 @@ public class ZvoRadio(string apIp, ushort apPort)
         }
     }
 
-    public async void ThreadRecvActionAsync()
-    {
-        while (!_ct.IsCancellationRequested)
-        {
-            var removed = 0;
-            List<RecvPacket> packets;
-
-            lock (PacketsRecv)
-            {
-                packets = PacketsRecv.FindAll(x => x.OK);
-            }
-
-            foreach (var i in packets)
-            {
-                OnGetPacketAsync.Invoke(i.GetPacket());
-            }
-
-            lock (PacketsRecv)
-            {
-                foreach (var i in packets)
-                {
-                    removed += PacketsRecv.Remove(i) ? 1 : 0;
-                }
-                removed += PacketsRecv.RemoveAll(x => (DateTime.Now - x.LastUpdate).TotalMilliseconds >= TimeOutCreateMs);
-            }
-
-            if (removed == 0) await Task.Delay(10, _ct);
-        }
-    }
-
     public class RecvPacket(RadioChunk chunk)
     {
         public DateTime LastUpdate = DateTime.Now;
         public bool OK => Chunk.DataIsValid;
         public byte Number { get; set; } = chunk.PacketNumber;
         public RadioChunk Chunk { get; set; } = chunk;
-
-        public void AddRepeat(RadioChunk repeat)
-        {
-            LastUpdate = DateTime.Now;
-
-            if (Chunk.DataIsValid) return;
-
-            if (repeat.DataIsValid)
-            {
-                Chunk = repeat;
-                return;
-            }
-
-            //var v = Chunk.DataIsValid;
-            Chunk.WriteNewXorData(repeat.GetXorData());
-            //Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} {Number} old={v}, rep={repeat.DataIsValid}, new={Chunk.DataIsValid}");
-        }
-
-        public byte[] GetPacket()
-        {
-            return Chunk.GetNormalData()[..];
-        }
     }
 
     public enum TransferMode

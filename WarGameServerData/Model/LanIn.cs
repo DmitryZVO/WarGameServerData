@@ -74,7 +74,12 @@ public class LanIn
                 var client = result.RemoteEndPoint;
                 var data = result.Buffer;
                 // Парсинг входящего пакета
-                await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync(client.Address.ToString(), data);
+                if (client.Address.ToString().Equals("127.0.0.1")) CounterZvoHB++;
+                await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.240", data);
+                if (data.Length > 80)
+                {
+
+                }
                 if (client.Address.ToString().Equals("192.168.1.240")) CounterMeshHB++;
             }
             catch (Exception e)
@@ -85,16 +90,9 @@ public class LanIn
         connect.Close();
     }
 
-    public async void RecvZvoPacket(byte[] data)
-    {
-        await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.240", data);
-        CounterZvoHB++;
-    }
 
     public async void StartAsync()
     {
-        Core.IoC.Services.GetRequiredService<ZvoRadio>().OnGetPacketAsync += RecvZvoPacket;
-
         var items = Core.IoC.Services.GetRequiredService<GameObjects>().Items;
         LanInPortHbAsync();
 

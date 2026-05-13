@@ -447,7 +447,7 @@ public class H264ChunkDecoder
     public void ReadChunkPacket(byte[] data)
     {
         var frameNumber = data[0]; // Номер кадра
-        var cut = data[1]; // Номер куска
+        //var cut = data[1]; // Номер куска
         var endCut = BitConverter.ToUInt16(data, 2) & 0b1000000000000000;
 
         //if (Number == 2010) Console.Write($"recv! {frameNumber:0}, cut {cut:0}, end={endCut > 0}\n");
