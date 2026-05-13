@@ -7,13 +7,13 @@ namespace WarGameServerData.Other;
 
 public class ZvoRadio(string apIp, ushort apPort)
 {
-    public static bool PrintLog => true;
+    public static bool PrintLog => false;
     public static int TimeOutCreateMs => 200;
 
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
     public const byte SizeDataCrc32 = 4; // Размер CRC32 блока данных
-    public const byte SizeBlockXor = 2; // Какими блоками кодируем XOR для восстановления
+    public const byte SizeBlockXor = 3; // Какими блоками кодируем XOR для восстановления
     public const int DataCrc32SizeXored = 8; // CRC32 данных кодируется каждый байт + CRC8
     public static byte BigSizeBlockXor => (SizeBlockXor + 1); // Общий размер блока XOR вместе с байтами CRC8
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16); // Стартовое смещение от начала заголовка
@@ -42,6 +42,11 @@ public class ZvoRadio(string apIp, ushort apPort)
     private readonly ConcurrentQueue<RadioChunk> ChunksSend = new(); // Чанки для оправки
     private readonly List<RecvPacket> PacketsRecv = []; // Собраные пакеты
     private readonly CancellationToken _ct = new();
+
+    public static int SizeRoundedData(int data)
+    {
+        return ((data / SizeBlockXor + (data % SizeBlockXor > 0 ? 1 : 0)) * SizeBlockXor);
+    }
 
     public void AddRadioHead(TransferMode mode, int repeats, byte[] radiohead)
     {
@@ -107,10 +112,12 @@ public class ZvoRadio(string apIp, ushort apPort)
         chunk.CalcAndWriteHeaderCrc16(); // Заполняем CRC16 заголовка
         chunk.WriteNormalData(data); // Пишем нормальные данные
         chunk.CalcAndWriteDataCrc32(); // Заполняем CRC32 данных
-        //var a = chunk.DataIsValid;
-        //var b = chunk.Data;
-        //var c = chunk.GetNormalData();
-        //var d = chunk.Check;
+        var a = chunk.DataIsValid;
+        var b = chunk.Data;
+        var c = chunk.GetNormalData();
+        var d = chunk.Check;
+        var e = chunk.DataSizeXored;
+        var f = chunk.GetArray;
         ChunksSend.Enqueue(chunk);
 
         if (PrintLog) Console.WriteLine(Convert.ToHexString(chunk.GetArray));
@@ -331,8 +338,8 @@ public class ZvoRadio(string apIp, ushort apPort)
         public ushort DataSizeOriginal { get { return BitConverter.ToUInt16(array, 5); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 5, 2); } }
         public bool DataIsValid => CheckXorData() & DataCrc32Check();
         public byte[] Data => GetNormalData();
-        public byte[] GetArray => array[..(SeekStart + DataSizeOriginal * BigSizeBlockXor + DataCrc32SizeXored)];
-        public int DataSizeXored { get { return (DataSizeOriginal * BigSizeBlockXor); } }
+        public byte[] GetArray => array[..(SeekStart + (SizeRoundedData(DataSizeOriginal) / SizeBlockXor) * BigSizeBlockXor + DataCrc32SizeXored)];
+        public int DataSizeXored => (SizeRoundedData(DataSizeOriginal) / SizeBlockXor) * BigSizeBlockXor;
         public int DataAndCrc32SizeXored { get { return (DataSizeXored + DataCrc32SizeXored); } }
 
         private readonly byte[] array = new byte[SizeHeader + SizeHeaderCrc16 + 10000]; // Чанк данных c XOR
@@ -359,7 +366,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             }
 
             var lenData = BitConverter.ToUInt16(data, 5);
-            if (data.Length != SeekStart + lenData * BigSizeBlockXor + DataCrc32SizeXored)
+            if (data.Length != SeekStart + (SizeRoundedData(lenData) / SizeBlockXor) * BigSizeBlockXor + DataCrc32SizeXored)
             {
                 if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_ERROR, len={data.Length}!={SeekStart + lenData * 2}");
                 Check = ChunkState.ErrorSize;
@@ -389,10 +396,10 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public bool DataCrc32Check() // +
         {
-            var crc32 = CRC32(array[SeekStart..(SeekStart + DataSizeOriginal * BigSizeBlockXor)]);
+            var crc32 = CRC32(array[SeekStart..(SeekStart + DataSizeXored)]);
             for (var i = 0; i < crc32.Length; i++)
             {
-                if (array[SeekStart + DataSizeOriginal * BigSizeBlockXor + i * 2 + 0] != crc32[i]) return false;
+                if (array[SeekStart + DataSizeXored + i * 2 + 0] != crc32[i]) return false;
             }
             return true;
         }
@@ -400,7 +407,7 @@ public class ZvoRadio(string apIp, ushort apPort)
         public void WriteNormalData(byte[] data) // +
         {
             // Создаем массив кратный данным для кратности блокам XOR
-            var dataRounde = new byte[data.Length / SizeBlockXor + (data.Length % SizeBlockXor > 0 ? SizeBlockXor : 0)];
+            var dataRounde = new byte[SizeRoundedData(data.Length)];
             Array.Copy(data, 0, dataRounde, 0, data.Length);
 
             // Заполняем array блоками данных SizeBlockXor, с шагами по SizeBlockXor
@@ -414,16 +421,15 @@ public class ZvoRadio(string apIp, ushort apPort)
         }
         public byte[] GetNormalData()
         {
-            var len = DataSizeOriginal / SizeBlockXor + (DataSizeOriginal % SizeBlockXor > 0 ? SizeBlockXor : 0);
-            var ret = new byte[DataSizeOriginal];
+            var ret = new byte[SizeRoundedData(DataSizeOriginal)];
 
             var n = 0;
-            for (var i = 0; i < len; i += SizeBlockXor)
+            for (var i = 0; i < ret.Length; i += SizeBlockXor)
             {
-                Array.Copy(array, SeekStart + n * BigSizeBlockXor, ret, n, SizeBlockXor);
+                Array.Copy(array, SeekStart + n * BigSizeBlockXor, ret, i, SizeBlockXor);
                 n++;
             }
-            return ret;
+            return ret[..DataSizeOriginal];
         }
 
         public void WriteNewXorData(byte[] data)
@@ -445,8 +451,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public bool CheckXorData()
         {
-            var len = DataSizeOriginal * BigSizeBlockXor;
-            for (var i = 0; i < len; i += BigSizeBlockXor)
+            for (var i = 0; i < DataSizeXored; i += BigSizeBlockXor)
             {
                 if (CRC8(array[(SeekStart + i)..(SeekStart + i + SizeBlockXor)]) != (byte)(array[SeekStart + i + SizeBlockXor])) return false;
             }
@@ -460,11 +465,11 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public void CalcAndWriteDataCrc32()
         {
-            var crc32 = CRC32(array[SeekStart..(SeekStart + DataSizeOriginal * BigSizeBlockXor)]);
+            var crc32 = CRC32(array[SeekStart..(SeekStart + DataSizeXored)]);
             for (var i = 0; i < crc32.Length; i++)
             {
-                array[SeekStart + DataSizeOriginal * BigSizeBlockXor + i * 2 + 0] = crc32[i];
-                array[SeekStart + DataSizeOriginal * BigSizeBlockXor + i * 2 + 1] = CRC8(crc32[i]);
+                array[SeekStart + DataSizeXored + i * 2 + 0] = crc32[i];
+                array[SeekStart + DataSizeXored + i * 2 + 1] = CRC8(crc32[i]);
             }
         }
     }
