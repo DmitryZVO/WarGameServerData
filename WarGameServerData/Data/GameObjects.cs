@@ -1,6 +1,7 @@
 ﻿using H264Sharp;
 using Microsoft.Extensions.DependencyInjection;
 using OpenCvSharp;
+using System.ComponentModel.DataAnnotations;
 using System.Net.Sockets;
 using System.Text.Json.Serialization;
 using WarGameServerData.Other;
@@ -213,8 +214,8 @@ public class GameObjects
             case 1 when packType == 0x08: // пакет с куском видео
                 {
                     var frameNumber = data[0]; // Номер кадра
-                    var frameCut = (byte)(data[1] & 0b01111111); // Номер куска
-                    var chunkNumber = BitConverter.ToUInt16(data, 2); // Номер чанка-декодера
+                    //var frameCut = data[1]; // Номер куска
+                    var chunkNumber = BitConverter.ToUInt16(data, 2) & 0b0111111111111111; // Номер чанка-декодера
 
                     var chunk = obj.CamFrames.ToList().Find(x => x.H264ChunkDecoders.Any(y => y.Number == chunkNumber))?.H264ChunkDecoders.Find(y=>y.Number == chunkNumber);
                     if (chunk == null) return; // Чанк не найден
@@ -421,6 +422,8 @@ public class H264ChunkDecoder
     private readonly H264Decoder _decoder;
     private DateTime LastUpdate { get; set; } = DateTime.MinValue;
 
+    private List<byte> RecivedCuts { get; set; } = [];
+
 
     public H264ChunkDecoder(CameraFrame camera, int number)
     {
@@ -443,14 +446,37 @@ public class H264ChunkDecoder
     public void ReadChunkPacket(byte[] data)
     {
         var frameNumber = data[0]; // Номер кадра
+        var cut = data[1]; // Номер куска
+        var endCut = BitConverter.ToUInt16(data, 2) & 0b1000000000000000;
 
-        if (UdpFrameNumber != frameNumber && UdpFrame.Length > 0) // Новый кадр, пора пересоздавать матрицу кадра
+        if (Number == 2000)
         {
-            DecodeChunk();
+            Console.WriteLine($"cut={cut:0}, number={frameNumber}, len={data.Length - 4}, final={endCut > 0}");
         }
-        UdpFrameNumber = frameNumber;
-        UdpFrame.Write(data, 4, data.Length - 4); // Записываем кусок данных
-        if ((data[1] & 0b10000000) > 0) // Это финальный кусок, пора пересоздавать матрицу кадра
+
+        //if (frameNumber != UdpFrameNumber && UdpFrame.Length > 0) // Новый кадр, пора пересоздавать матрицу кадра
+        //{
+        //    DecodeChunk();
+        //}
+
+        lock (this)
+        {
+            if (frameNumber == UdpFrameNumber && RecivedCuts.Any(x => x == cut)) return; // такой кусок уже был (пропускаем повторы)
+            if (frameNumber > UdpFrameNumber)
+            {
+                RecivedCuts = [];
+                if (UdpFrame.Length > 0)
+                {
+                    DecodeChunk();
+                }
+            }
+            UdpFrameNumber = frameNumber;
+            UdpFrame.Write(data, 4, data.Length - 4); // Записываем кусок данных
+        
+            RecivedCuts.Add(cut); // Запоминаем добавленный кусок
+        }
+        
+        if (endCut > 0) // Это финальный кусок, пора пересоздавать матрицу кадра
         {
             DecodeChunk();
         }
@@ -458,25 +484,31 @@ public class H264ChunkDecoder
 
     public void DecodeChunk()
     {
-        var dataArr = UdpFrame.ToArray();
-        if (dataArr.Length <= 0)
+        lock (this)
         {
-            UdpFrame = new MemoryStream();
-            return;
-        }
-        var rgb = new RgbImage(ImageFormat.Rgb, BlockSize.Width, BlockSize.Height);
-        if (_decoder.Decode(dataArr, 0, dataArr.Length, true, out var _, ref rgb) != false)
-        {
-            lock (FrameChunk)
+            var dataArr = UdpFrame.ToArray();
+            if (dataArr.Length <= 0)
             {
-                FrameChunk.Dispose();
-                FrameChunk = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, rgb.GetBytes());
-                LastUpdate = DateTime.Now;
+                UdpFrame = new MemoryStream();
+                return;
             }
 
+            RecivedCuts = [];
+
+            var rgb = new RgbImage(ImageFormat.Rgb, BlockSize.Width, BlockSize.Height);
+            if (_decoder.Decode(dataArr, 0, dataArr.Length, true, out var _, ref rgb) != false)
+            {
+                lock (FrameChunk)
+                {
+                    FrameChunk.Dispose();
+                    FrameChunk = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, rgb.GetBytes());
+                    LastUpdate = DateTime.Now;
+                }
+
+            }
+            rgb.Dispose();
+            UdpFrame = new MemoryStream();
         }
-        rgb.Dispose();
-        UdpFrame = new MemoryStream();
     }
 }
 

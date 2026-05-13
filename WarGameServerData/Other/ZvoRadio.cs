@@ -472,13 +472,20 @@ public class ZvoRadio(string apIp, ushort apPort)
 
     public static byte[] DecompressZip(byte[] dataZip)
     {
-        using var msIn = new MemoryStream(dataZip);
-        using var msOut = new MemoryStream();
-        using (var ds = new DeflateStream(msIn, CompressionMode.Decompress))
+        try
         {
-            ds.CopyTo(msOut);
+            using var msIn = new MemoryStream(dataZip);
+            using var msOut = new MemoryStream();
+            using (var ds = new DeflateStream(msIn, CompressionMode.Decompress))
+            {
+                ds.CopyTo(msOut);
+            }
+            return msOut.ToArray();
         }
-        return msOut.ToArray();
+        catch
+        {
+            return [];
+        }
     }
 
     public static byte CRC8(byte[] data)
