@@ -418,13 +418,14 @@ public class H264ChunkDecoder
     public int Number { get; } // Номер чанка
     public long UdpFrameNumber { get; set; } // Текущий номер кадра (для сборки)
     public long UdpFrameLastNumber { get; set; } = -1; // Текущий номер кадра (для сборки)
-    public long UdpFrameLastCutNumber { get; set; } = -1; // Текущий номер куска кадра (для сборки)
     public MemoryStream UdpFrame { get; set; } // Поток кадра из udp собранный из кусков
     public bool IsUpdate => (DateTime.Now - LastUpdate).TotalMilliseconds <= 30; // Проверка на обновление чанка
 
     private readonly H264Decoder _decoder;
     private DateTime LastUpdate { get; set; } = DateTime.MinValue;
 
+    private int dropped = 0;
+    private DateTime lastTime = DateTime.MinValue;
     public H264ChunkDecoder(CameraFrame camera, int number)
     {
         Number = camera.Number * 1000 + number;
@@ -449,7 +450,17 @@ public class H264ChunkDecoder
         var cut = data[1]; // Номер куска
         var endCut = BitConverter.ToUInt16(data, 2) & 0b1000000000000000;
 
-        //if (Number == 2010) Console.Write($"recv! {frameNumber:0}, cut {cut:0}, end={endCut > 0}");
+        //if (Number == 2010) Console.Write($"recv! {frameNumber:0}, cut {cut:0}, end={endCut > 0}\n");
+
+        if (Number == 2010)
+        {
+            if ((DateTime.Now - lastTime).TotalMilliseconds > 1000)
+            {
+                lastTime = DateTime.Now;
+                Console.WriteLine($"dropped = {dropped} packets!");
+                dropped = 0;
+            }
+        }
 
         lock (this)
         {
@@ -458,10 +469,15 @@ public class H264ChunkDecoder
                 //if (Number == 2010) Console.WriteLine($" double frame!");
                 return;
             }
-            if (cut == UdpFrameLastCutNumber)
+            else
             {
-                //if (Number == 2010) Console.WriteLine($" double cut!");
-                return;
+                if (frameNumber != (UdpFrameLastNumber + 1))
+                    if (Number == 2010)
+                    {
+                        var drop = (int)(frameNumber - (UdpFrameLastNumber + 1));
+                        //Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} DROP={drop}");
+                        dropped += drop;
+                    }
             }
 
             if (frameNumber != UdpFrameNumber)
@@ -470,17 +486,16 @@ public class H264ChunkDecoder
                 UdpFrameLastNumber = UdpFrameNumber;
             }
             UdpFrameNumber = frameNumber;
-            UdpFrameLastCutNumber = cut;
             UdpFrame.Write(data, 4, data.Length - 4); // Записываем кусок данных
         }
 
         if (endCut > 0) // Это финальный кусок, пора пересоздавать матрицу кадра
         {
             UdpFrameLastNumber = frameNumber;
-            UdpFrameLastCutNumber = -1;
             DecodeChunk();
             //if (Number == 2010) Console.WriteLine($" OK");
         }
+
     }
 
     public void DecodeChunk()
