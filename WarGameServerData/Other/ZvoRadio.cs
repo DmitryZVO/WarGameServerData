@@ -435,6 +435,24 @@ public class ZvoRadio(string apIp, ushort apPort)
             }
         }
     }
+    public static bool CompressZipIfSmall(byte[] data, out byte[] smaller)
+    {
+        using var msIn = new MemoryStream(data);
+        using var msOut = new MemoryStream();
+        using (var ds = new DeflateStream(msOut, CompressionLevel.SmallestSize))
+        {
+            msIn.CopyTo(ds);
+        }
+        var zip = msOut.ToArray();
+        if (zip.Length < data.Length)
+        {
+            smaller = zip;
+            return true;
+        }
+        smaller = data;
+        return false;
+    }
+
     public static byte[] CompressZip(byte[] data)
     {
         using var msIn = new MemoryStream(data);
