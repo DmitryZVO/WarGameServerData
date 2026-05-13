@@ -99,7 +99,7 @@ public class ZvoRadio(string apIp, ushort apPort)
         var chunk = new RadioChunk
         {
             PacketNumber = PacketNumber, // Номер пакета
-            DataSize = (ushort)(data.Length + SizeDataCrc32), /// Полезные данные
+            DataSizeOriginal = (ushort)(data.Length + SizeDataCrc32), /// Полезные данные
             TransferMode = mode, // тип отправки
         };
         chunk.CalcAndWriteHeaderCrc16(); // Заполняем CRC16 заголовка
@@ -305,71 +305,31 @@ public class ZvoRadio(string apIp, ushort apPort)
 
     public class RadioChunk // Минимальный пакет радио (для отправки)
     {
+        public readonly static int DataCrc32SizeXored = SizeDataCrc32 * 2;
+
         public ChunkState Check { get; } = ChunkState.OK;
         public TransferMode TransferMode { get; set; } = TransferMode.None;
         public byte PacketNumber { get { return array[4]; } set { array[4] = value; } }
-        public ushort DataSize { get { return BitConverter.ToUInt16(array, 5); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 5, 2); } }
+        public ushort DataSizeOriginal { get { return BitConverter.ToUInt16(array, 5); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 5, 2); } }
         public bool DataIsValid => CheckXorData() & DataCrc32Check();
         public byte[] Data => GetNormalData();
-        public byte[] GetArray => array[..(SeekStart + DataSize * 2)];
+        public byte[] GetArray => array[..(SeekStart + DataSizeOriginal * 2)];
+        public int DataSizeXored { get { return (DataSizeOriginal * 2); } }
+        public int DataAndCrc32SizeXored { get { return (DataSizeXored + DataCrc32SizeXored); } }
 
         private readonly byte[] array = new byte[SizeHeader + SizeHeaderCrc16 + 10000]; // Чанк данных c XOR
 
-        public bool DataCrc32Check()
+        public RadioChunk()
         {
-            var crc32 = CRC32(array[..(SeekStart + DataSize * 2 - SizeDataCrc32 * 2)]);
-            for (var i = 0; i < crc32.Length; i++)
-            {
-                if (array[SeekStart + DataSize * 2 - SizeDataCrc32 * 2 + i * 2 + 0] != crc32[i]) return false;
-            }
-            return true;
-        }
-
-        public void WriteNormalData(byte[] data)
-        {
-            if (data.Length > array.Length) return; // Размер данных для записи не совпадает
-            for (var i = 0; i < data.Length; i++)
-            {
-                array[SeekStart + i * 2 + 0] = data[i];
-                array[SeekStart + i * 2 + 1] = (byte)(data[i] ^ XorByte);
-            }
-        }
-        public byte[] GetNormalData()
-        {
-            var ret = new byte[DataSize];
-            for (var i = 0; i < DataSize; i++)
-            {
-                ret[i] = array[SeekStart + i * 2 + 0];
-            }
-            return ret;
-        }
-
-        public void WriteNewXorData(byte[] data)
-        {
-            for (var i = 0; i < data.Length / 2; i++)
-            {
-                if (data.Length > array.Length) break;
-
-                if ((data[i * 2 + 0] == (byte)(data[i * 2 + 1] ^ XorByte))) // верный кусок данных
-                {
-                    array[SeekStart + i * 2 + 0] = data[i * 2 + 0]; // Обновляем данные
-                    array[SeekStart + i * 2 + 1] = data[i * 2 + 1]; // Обновляем данные
-                }
-            }
-        }
-
-        public byte[] GetXorData()
-        {
-            return array[SeekStart..(SeekStart + DataSize * 2)];
-        }
-
-        public bool CheckXorData()
-        {
-            for (var i = 0; i < DataSize; i++)
-            {
-                if (array[SeekStart + i * 2 + 0] != (byte)(array[SeekStart + i * 2 + 1] ^ XorByte)) return false;
-            }
-            return true;
+            // Служебные не изменяемые байты
+            array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
+            array[1] = 0x70; // Идентификатор ZVO пакета (для идентификации ZVO пакетов)
+            array[2] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
+            array[3] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
+            array[4] = 0; array[5] = 0; // Номер пакета (UInt16)
+            array[6] = 0; array[7] = 0; // Длина полезные данных (UInt16) (чистых байт, без XOR)
+            array[8] = 0; array[9] = 0; // CRC16 заголовка [0..8]
+            // Тело полезной нагрузки 
         }
 
         public RadioChunk(byte[] data)
@@ -409,17 +369,61 @@ public class ZvoRadio(string apIp, ushort apPort)
             if (PrintLog) Console.WriteLine("");
         }
 
-        public RadioChunk()
+        public bool DataCrc32Check()
         {
-            // Служебные не изменяемые байты
-            array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
-            array[1] = 0x70; // Идентификатор ZVO пакета (для идентификации ZVO пакетов)
-            array[2] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
-            array[3] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
-            array[4] = 0; array[5] = 0; // Номер пакета (UInt16)
-            array[6] = 0; array[7] = 0; // Длина данных (UInt16) (всегда кратна 2м, т.к. XOR)
-            array[8] = 0; array[9] = 0; // CRC16 заголовка [0..8]
-            // Тело полезной нагрузки 
+            var crc32 = CRC32(array[..(SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2)]);
+            for (var i = 0; i < crc32.Length; i++)
+            {
+                if (array[SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2 + i * 2 + 0] != crc32[i]) return false;
+            }
+            return true;
+        }
+
+        public void WriteNormalData(byte[] data)
+        {
+            if (data.Length > array.Length) return; // Размер данных для записи не совпадает
+            for (var i = 0; i < data.Length; i++)
+            {
+                array[SeekStart + i * 2 + 0] = data[i];
+                array[SeekStart + i * 2 + 1] = (byte)(data[i] ^ XorByte);
+            }
+        }
+        public byte[] GetNormalData()
+        {
+            var ret = new byte[DataSizeOriginal];
+            for (var i = 0; i < DataSizeOriginal; i++)
+            {
+                ret[i] = array[SeekStart + i * 2 + 0];
+            }
+            return ret;
+        }
+
+        public void WriteNewXorData(byte[] data)
+        {
+            for (var i = 0; i < data.Length / 2; i++)
+            {
+                if (data.Length > array.Length) break;
+
+                if ((data[i * 2 + 0] == (byte)(data[i * 2 + 1] ^ XorByte))) // верный кусок данных
+                {
+                    array[SeekStart + i * 2 + 0] = data[i * 2 + 0]; // Обновляем данные
+                    array[SeekStart + i * 2 + 1] = data[i * 2 + 1]; // Обновляем данные
+                }
+            }
+        }
+
+        public byte[] GetXorData()
+        {
+            return array[SeekStart..(SeekStart + DataSizeOriginal * 2)];
+        }
+
+        public bool CheckXorData()
+        {
+            for (var i = 0; i < DataSizeOriginal; i++)
+            {
+                if (array[SeekStart + i * 2 + 0] != (byte)(array[SeekStart + i * 2 + 1] ^ XorByte)) return false;
+            }
+            return true;
         }
 
         public void CalcAndWriteHeaderCrc16()
@@ -429,11 +433,11 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public void CalcAndWriteDataCrc32()
         {
-            var crc32 = CRC32(array[..(SeekStart + DataSize * 2 - SizeDataCrc32 * 2)]);
+            var crc32 = CRC32(array[..(SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2)]);
             for (var i = 0; i < crc32.Length; i++)
             {
-                array[SeekStart + DataSize * 2 - SizeDataCrc32 * 2 + i * 2 + 0] = crc32[i];
-                array[SeekStart + DataSize * 2 - SizeDataCrc32 * 2 + i * 2 + 1] = (byte)(crc32[i] ^ XorByte);
+                array[SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2 + i * 2 + 0] = crc32[i];
+                array[SeekStart + DataSizeOriginal * 2 - SizeDataCrc32 * 2 + i * 2 + 1] = (byte)(crc32[i] ^ XorByte);
             }
         }
     }
