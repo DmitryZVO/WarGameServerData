@@ -76,7 +76,6 @@ public class LanIn
                 var client = result.RemoteEndPoint;
                 var data = result.Buffer;
                 // Парсинг входящего пакета
-                if (client.Address.ToString().Equals("127.0.0.1")) CounterZvoHB++;
                 await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.240", data);
                 if (data.Length > 80)
                 {
@@ -92,9 +91,10 @@ public class LanIn
         connect.Close();
     }
 
-    public static async Task RecvZvoPacket(byte[] data)
+    public async Task RecvZvoPacket(byte[] data)
     {
         await new UdpClient().SendAsync(data, "127.0.0.1", UdpPortHb);
+        CounterZvoHB++;
     }
 
     public async void StartAsync()
