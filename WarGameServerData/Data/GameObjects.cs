@@ -64,7 +64,7 @@ public class GameObjects
         var send = data.ToArray();
 
         if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
-        if (obj.Telem.UseZvo) Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
+        if (obj.Telem.UseZvo) await Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send.Length;
     }
     public static async Task SendCommandAsync(GameObject obj)
@@ -80,7 +80,7 @@ public class GameObjects
         var send = data.ToArray();
 
         if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
-        if (obj.Telem.UseZvo) Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
+        if (obj.Telem.UseZvo) await Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send.Length;
     }
 
@@ -103,7 +103,7 @@ public class GameObjects
         var send = data.ToArray();
 
         if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
-        if (obj.Telem.UseZvo) Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
+        if (obj.Telem.UseZvo) await Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send.Length;
     }
     public static string IdToName(int id)

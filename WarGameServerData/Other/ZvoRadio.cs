@@ -2,7 +2,6 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Net.Sockets;
-using WarGameServerData.Model;
 
 namespace WarGameServerData.Other;
 
@@ -101,26 +100,8 @@ public class ZvoRadio(string apIp, ushort apPort)
         }
     }
 
-    public void Send(byte[] data, TransferMode mode) // Отправить пакет в радиоэфир
-    {
-        var chunk = new RadioChunk
-        {
-            PacketNumber = PacketNumber, // Номер пакета
-            DataSizeOriginal = (ushort)(data.Length), /// Полезные данные
-            TransferMode = mode, // тип отправки
-        };
-        chunk.CalcAndWriteHeaderCrc16(); // Заполняем CRC16 заголовка
-        chunk.WriteNormalData(data); // Пишем нормальные данные
-        chunk.CalcAndWriteDataCrc32(); // Заполняем CRC32 данных
-        ChunksSend.Enqueue(chunk);
-
-        if (PrintLog) Console.WriteLine(Convert.ToHexString(chunk.GetArray));
-        PacketNumber++;
-    }
-
     public async void StartAsync()
     {
-        ThreadSendAsync();
         ThreadRecvAsync();
         ThreadRecvApAsync();
 
@@ -214,53 +195,55 @@ public class ZvoRadio(string apIp, ushort apPort)
         ErrorSize = 3,
     }
 
-    public async void ThreadSendAsync()
+    public async Task Send(byte[] data, TransferMode mode) // Отправить пакет в радиоэфир
     {
-        while (!_ct.IsCancellationRequested)
+        var send = new RadioChunk
         {
+            PacketNumber = PacketNumber, // Номер пакета
+            DataSizeOriginal = (ushort)(data.Length), /// Полезные данные
+            TransferMode = mode, // тип отправки
+        };
+        send.CalcAndWriteHeaderCrc16(); // Заполняем CRC16 заголовка
+        send.WriteNormalData(data); // Пишем нормальные данные
+        send.CalcAndWriteDataCrc32(); // Заполняем CRC32 данных
 
-            ChunksSend.TryDequeue(out RadioChunk? send);
+        using var udp = new UdpClient();
+        var radio = RadioHeadersMaxRange;
 
-            if (send == null)
-            {
-                await Task.Delay(10, _ct);
-                continue;
-            }
-
-            using var udp = new UdpClient();
-            var radio = RadioHeadersMaxRange;
-            switch (send.TransferMode)
-            {
-                default:
-                case TransferMode.None:
-                    return;
-                case TransferMode.MaxRange:
-                    radio = RadioHeadersMaxRange;
-                    break;
-                case TransferMode.VideoEL:
-                    radio = RadioHeadersVideoEL;
-                    break;
-                case TransferMode.VideoL:
-                    radio = RadioHeadersVideoL;
-                    break;
-                case TransferMode.VideoM:
-                    radio = RadioHeadersVideoM;
-                    break;
-                case TransferMode.VideoH:
-                    radio = RadioHeadersVideoH;
-                    break;
-            }
-            for (var i = 0; i < radio.Count; i++)
-            {
-                using var ms = new MemoryStream();
-                lock (radio)
-                {
-                    ms.Write(radio[i]);
-                }
-                ms.Write(send.GetArray);
-                await udp.SendAsync(ms.ToArray(), apIp, apPort, _ct);
-            }
+        switch (send.TransferMode)
+        {
+            default:
+            case TransferMode.None:
+                return;
+            case TransferMode.MaxRange:
+                radio = RadioHeadersMaxRange;
+                break;
+            case TransferMode.VideoEL:
+                radio = RadioHeadersVideoEL;
+                break;
+            case TransferMode.VideoL:
+                radio = RadioHeadersVideoL;
+                break;
+            case TransferMode.VideoM:
+                radio = RadioHeadersVideoM;
+                break;
+            case TransferMode.VideoH:
+                radio = RadioHeadersVideoH;
+                break;
         }
+        for (var i = 0; i < radio.Count; i++)
+        {
+            using var ms = new MemoryStream();
+            lock (radio)
+            {
+                ms.Write(radio[i]);
+            }
+            ms.Write(send.GetArray);
+            await udp.SendAsync(ms.ToArray(), apIp, apPort, _ct);
+        }
+
+        if (PrintLog) Console.WriteLine(Convert.ToHexString(send.GetArray));
+        PacketNumber++;
     }
 
     public class RadioChunk // Минимальный пакет радио (для отправки)
@@ -280,7 +263,8 @@ public class ZvoRadio(string apIp, ushort apPort)
         public RadioChunk()
         {
             // Служебные не изменяемые байты
-            array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
+            //array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
+            array[0] = 0b11000100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_CTS]
             array[1] = 0x70; // Идентификатор ZVO пакета (для идентификации ZVO пакетов)
             array[2] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
             array[3] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
