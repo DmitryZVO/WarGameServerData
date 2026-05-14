@@ -9,15 +9,16 @@ namespace WarGameServerData.Other;
 public class ZvoRadio(string apIp, ushort apPort)
 {
     public static bool PrintLog => false;
-    public static int TimeOutCreateMs => 200;
 
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
     public const byte SizeDataCrc32 = 4; // Размер CRC32 блока данных
-    public const byte SizeBlockXor = 16; // Какими блоками кодируем XOR для восстановления
+    public const byte SizeBlocForkXor = 16; // Какими блоками кодируем XOR для восстановления
     public const int DataCrc32SizeXored = 8; // CRC32 данных кодируется каждый байт + CRC8
-    public static byte BigSizeBlockXor => (SizeBlockXor + 1); // Общий размер блока XOR вместе с байтами CRC8
+    public static byte BigSizeBlockXor => (SizeBlocForkXor + 1); // Общий размер блока XOR вместе с байтами CRC8
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16); // Стартовое смещение от начала заголовка
+
+    public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
 
     public ulong ApLanPacketsSend { get; private set; }
     public ulong ApLanPacketsRecv { get; private set; }
@@ -39,12 +40,12 @@ public class ZvoRadio(string apIp, ushort apPort)
     private byte PacketNumber = 0; // циклический номер пакета
 
     private readonly ConcurrentQueue<RadioChunk> ChunksSend = new(); // Чанки для оправки
-    private RecvPacket? PacketsRecv; // Собраные пакеты
+    private RadioChunk? LastValidChunk; // Последний валидный пакет
     private readonly CancellationToken _ct = new();
 
     public static int SizeRoundedData(int data)
     {
-        return ((data / SizeBlockXor + (data % SizeBlockXor > 0 ? 1 : 0)) * SizeBlockXor);
+        return ((data / SizeBlocForkXor + (data % SizeBlocForkXor > 0 ? 1 : 0)) * SizeBlocForkXor);
     }
 
     public void AddRadioHead(TransferMode mode, int repeats, byte[] radiohead)
@@ -151,21 +152,20 @@ public class ZvoRadio(string apIp, ushort apPort)
             var chunk = new RadioChunk(dataChunk);
             if (chunk.Check != ChunkState.OK) continue;
 
-            PacketsRecv ??= new RecvPacket(chunk);
+            LastValidChunk ??= chunk;
 
-            if (chunk.PacketNumber == PacketsRecv.Number) // Это повтор
+            if (chunk.PacketNumber == LastValidChunk.PacketNumber) // Это повтор
             {
-                if (PacketsRecv.OK) continue; // Игнорируем повторы при прошлом валидном пакете 
-                PacketsRecv.Chunk.WriteNewXorData(chunk.GetXorData()); // Пробуем восстановить пакет
+                if (LastValidChunk.DataIsValid) continue; // Игнорируем повторы при прошлом валидном пакете 
+                LastValidChunk.WriteNewXorData(chunk.GetXorData()); // Пробуем восстановить пакет
             }
             else // Пришел новый пакет, пора отправлять старый
             {
-                if (PacketsRecv.OK) // Если пакет валиден - отправляем!
+                if (LastValidChunk.DataIsValid) // Если пакет валиден - отправляем!
                 {
-                    var pack = PacketsRecv.Chunk.GetNormalData();
-                    await new UdpClient().SendAsync(pack, "127.0.0.1", LanIn.UdpPortHb);
+                    await OnNewPacketAsync.Invoke(LastValidChunk.GetNormalData());
                 }
-                PacketsRecv = new RecvPacket(chunk);
+                LastValidChunk = chunk;
             }
         }
     }
@@ -194,14 +194,6 @@ public class ZvoRadio(string apIp, ushort apPort)
             ApRadioSendQueue = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek)); seek += 8;
             ApLanSendQueue = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(data, seek));
         }
-    }
-
-    public class RecvPacket(RadioChunk chunk)
-    {
-        public DateTime LastUpdate = DateTime.Now;
-        public bool OK => Chunk.DataIsValid;
-        public byte Number { get; set; } = chunk.PacketNumber;
-        public RadioChunk Chunk { get; set; } = chunk;
     }
 
     public enum TransferMode
@@ -279,8 +271,8 @@ public class ZvoRadio(string apIp, ushort apPort)
         public ushort DataSizeOriginal { get { return BitConverter.ToUInt16(array, 5); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 5, 2); } }
         public bool DataIsValid => CheckXorData() & DataCrc32Check();
         public byte[] Data => GetNormalData();
-        public byte[] GetArray => array[..(SeekStart + (SizeRoundedData(DataSizeOriginal) / SizeBlockXor) * BigSizeBlockXor + DataCrc32SizeXored)];
-        public int DataSizeXored => (SizeRoundedData(DataSizeOriginal) / SizeBlockXor) * BigSizeBlockXor;
+        public byte[] GetArray => array[..(SeekStart + (SizeRoundedData(DataSizeOriginal) / SizeBlocForkXor) * BigSizeBlockXor + DataCrc32SizeXored)];
+        public int DataSizeXored => (SizeRoundedData(DataSizeOriginal) / SizeBlocForkXor) * BigSizeBlockXor;
         public int DataAndCrc32SizeXored { get { return (DataSizeXored + DataCrc32SizeXored); } }
 
         private readonly byte[] array = new byte[SizeHeader + SizeHeaderCrc16 + 10000]; // Чанк данных c XOR
@@ -307,7 +299,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             }
 
             var lenData = BitConverter.ToUInt16(data, 5);
-            if (data.Length != SeekStart + (SizeRoundedData(lenData) / SizeBlockXor) * BigSizeBlockXor + DataCrc32SizeXored)
+            if (data.Length != SeekStart + (SizeRoundedData(lenData) / SizeBlocForkXor) * BigSizeBlockXor + DataCrc32SizeXored)
             {
                 if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_ERROR, len={data.Length}!={SeekStart + lenData * 2}");
                 Check = ChunkState.ErrorSize;
@@ -353,10 +345,10 @@ public class ZvoRadio(string apIp, ushort apPort)
 
             // Заполняем array блоками данных SizeBlockXor, с шагами по SizeBlockXor
             var n = 0;
-            for (var i = 0; i < dataRounde.Length; i += SizeBlockXor)
+            for (var i = 0; i < dataRounde.Length; i += SizeBlocForkXor)
             {
-                Array.Copy(dataRounde, i, array, SeekStart + n * BigSizeBlockXor, SizeBlockXor);
-                array[SeekStart + n * BigSizeBlockXor + SizeBlockXor] = CRC8(dataRounde[i..(i + SizeBlockXor)]);
+                Array.Copy(dataRounde, i, array, SeekStart + n * BigSizeBlockXor, SizeBlocForkXor);
+                array[SeekStart + n * BigSizeBlockXor + SizeBlocForkXor] = CRC8(dataRounde[i..(i + SizeBlocForkXor)]);
                 n++;
             }
         }
@@ -365,9 +357,9 @@ public class ZvoRadio(string apIp, ushort apPort)
             var ret = new byte[SizeRoundedData(DataSizeOriginal)];
 
             var n = 0;
-            for (var i = 0; i < ret.Length; i += SizeBlockXor)
+            for (var i = 0; i < ret.Length; i += SizeBlocForkXor)
             {
-                Array.Copy(array, SeekStart + n * BigSizeBlockXor, ret, i, SizeBlockXor);
+                Array.Copy(array, SeekStart + n * BigSizeBlockXor, ret, i, SizeBlocForkXor);
                 n++;
             }
             return ret[..DataSizeOriginal];
@@ -375,10 +367,10 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public void WriteNewXorData(byte[] data)
         {
-            var len = data.Length / SizeBlockXor + (data.Length % SizeBlockXor > 0 ? SizeBlockXor : 0);
+            var len = data.Length / SizeBlocForkXor + (data.Length % SizeBlocForkXor > 0 ? SizeBlocForkXor : 0);
             for (var i = 0; i < len; i += BigSizeBlockXor)
             {
-                if (CRC8(data[i..(i + SizeBlockXor)]) == data[i + SizeBlockXor]) // это валидный блок данных
+                if (CRC8(data[i..(i + SizeBlocForkXor)]) == data[i + SizeBlocForkXor]) // это валидный блок данных
                 {
                     Array.Copy(data, i, array, SeekStart + i, BigSizeBlockXor);
                 }
@@ -394,7 +386,7 @@ public class ZvoRadio(string apIp, ushort apPort)
         {
             for (var i = 0; i < DataSizeXored; i += BigSizeBlockXor)
             {
-                if (CRC8(array[(SeekStart + i)..(SeekStart + i + SizeBlockXor)]) != (byte)(array[SeekStart + i + SizeBlockXor])) return false;
+                if (CRC8(array[(SeekStart + i)..(SeekStart + i + SizeBlocForkXor)]) != (byte)(array[SeekStart + i + SizeBlocForkXor])) return false;
             }
             return true;
         }

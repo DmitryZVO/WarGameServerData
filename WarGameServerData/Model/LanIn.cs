@@ -62,6 +62,8 @@ public class LanIn
 
     public async void LanInPortHbAsync()
     {
+        Core.IoC.Services.GetRequiredService<ZvoRadio>().OnNewPacketAsync += RecvZvoPacket;
+
         CheckAsyncHB();
 
         var connect = new UdpClient(UdpPortHb);
@@ -90,6 +92,10 @@ public class LanIn
         connect.Close();
     }
 
+    public static async Task RecvZvoPacket(byte[] data)
+    {
+        await new UdpClient().SendAsync(data, "127.0.0.1", UdpPortHb);
+    }
 
     public async void StartAsync()
     {
