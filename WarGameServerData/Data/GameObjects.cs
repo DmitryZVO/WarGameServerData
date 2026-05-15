@@ -14,14 +14,14 @@ public class GameObjects
 
     public async void SendRequestsAsync(CancellationToken ct = default)
     {
-        Items.Add(new GameObject() { Ip="192.168.1.240"});
+        //Items.Add(new GameObject() { Ip="192.168.1.241"});
         while (!ct.IsCancellationRequested)
         {
             try
             {
                 await Task.Delay(50, ct); // 20гц
 
-                await SendRequestsAsync(Items.First()); continue;
+                //await SendRequestsAsync(Items.First()); continue;
                 foreach (var item in Items)
                 {
                     await SendRequestsAsync(item);

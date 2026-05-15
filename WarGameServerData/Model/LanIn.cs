@@ -76,12 +76,8 @@ public class LanIn
                 var client = result.RemoteEndPoint;
                 var data = result.Buffer;
                 // Парсинг входящего пакета
-                await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.240", data);
-                if (data.Length > 80)
-                {
-
-                }
-                if (client.Address.ToString().Equals("192.168.1.240")) CounterMeshHB++;
+                await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.241", data);
+                if (!client.Address.ToString().Equals("127.0.0.1")) CounterMeshHB++;
             }
             catch (Exception e)
             {

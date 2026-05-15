@@ -7,7 +7,7 @@ namespace WarGameServerData.Other;
 
 public class ZvoRadio(string apIp, ushort apPort)
 {
-    public static bool PrintLog => true;
+    public static bool PrintLog => false;
 
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
@@ -131,6 +131,10 @@ public class ZvoRadio(string apIp, ushort apPort)
             if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
             if (data.Length < SeekStart + SizeDataCrc32) continue; // Огрызок пакета
             var dataChunk = data[..(PhySendPacketCrc32 ? ^4 : ^0)]; // чанк ZVO
+            if (data.Length > 360)
+            {
+
+            }
             var chunk = new RadioChunk(dataChunk);
             if (chunk.Check != ChunkState.OK) continue;
 
@@ -276,9 +280,9 @@ public class ZvoRadio(string apIp, ushort apPort)
         public RadioChunk()
         {
             // Служебные не изменяемые байты
-            //array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
-            array[0] = 0b11000100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_CTS]
-            //array[0] = 0b00001000; // [PKT_TYPE_DATA | PKT_SUBTYPE_DATA_D] // НЕ РАБОТАЕТ
+            array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
+            //array[0] = 0b11000100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_CTS]
+            //array[0] = 0b10001000; // [PKT_TYPE_DATA | PKT_SUBTYPE_DATA_QoS_D] // НЕ РАБОТАЕТ
             array[1] = 0x70; // Идентификатор ZVO пакета (для идентификации ZVO пакетов)
             array[2] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
             array[3] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
