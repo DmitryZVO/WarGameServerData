@@ -14,12 +14,14 @@ public class GameObjects
 
     public async void SendRequestsAsync(CancellationToken ct = default)
     {
+        Items.Add(new GameObject() { Ip="192.168.1.240"});
         while (!ct.IsCancellationRequested)
         {
             try
             {
                 await Task.Delay(50, ct); // 20гц
 
+                await SendRequestsAsync(Items.First()); continue;
                 foreach (var item in Items)
                 {
                     await SendRequestsAsync(item);
@@ -64,7 +66,8 @@ public class GameObjects
         var send = data.ToArray();
 
         if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
-        if (obj.Telem.UseZvo) await Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
+        //if (obj.Telem.UseZvo) 
+            await Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send.Length;
     }
     public static async Task SendCommandAsync(GameObject obj)

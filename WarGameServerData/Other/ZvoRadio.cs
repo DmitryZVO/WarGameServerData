@@ -7,13 +7,14 @@ namespace WarGameServerData.Other;
 
 public class ZvoRadio(string apIp, ushort apPort)
 {
-    public static bool PrintLog => false;
+    public static bool PrintLog => true;
 
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
     public const byte SizeDataCrc32 = 4; // Размер CRC32 блока данных
     public const byte SizeBlocForkXor = 16; // Какими блоками кодируем XOR для восстановления
     public const int DataCrc32SizeXored = 8; // CRC32 данных кодируется каждый байт + CRC8
+    public const bool PhySendPacketCrc32 = true; // Есть ли в конце пакета FCS_CRC
     public static byte BigSizeBlockXor => (SizeBlocForkXor + 1); // Общий размер блока XOR вместе с байтами CRC8
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16); // Стартовое смещение от начала заголовка
 
@@ -129,7 +130,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 
             if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
             if (data.Length < SeekStart + SizeDataCrc32) continue; // Огрызок пакета
-            var dataChunk = data[..^4]; // чанк ZVO
+            var dataChunk = data[..(PhySendPacketCrc32 ? ^4 : ^0)]; // чанк ZVO
             var chunk = new RadioChunk(dataChunk);
             if (chunk.Check != ChunkState.OK) continue;
 
@@ -238,11 +239,23 @@ public class ZvoRadio(string apIp, ushort apPort)
             {
                 ms.Write(radio[i]);
             }
-            ms.Write(send.GetArray);
-            await udp.SendAsync(ms.ToArray(), apIp, apPort, _ct);
+            /*
+            ms.Write([
+                0b00001000, 
+                0x00, 
+                0, 0, 
+                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // reciever
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sender
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // filtered
+                0x00, 0x00]);
+            var d = ms.ToArray();
+            */
+            ms.Write(send.GetNormalData());
+            var d = ms.ToArray();
+            await udp.SendAsync(d, apIp, apPort, _ct);
         }
 
-        if (PrintLog) Console.WriteLine(Convert.ToHexString(send.GetArray));
+        //if (PrintLog) Console.WriteLine(Convert.ToHexString(send.GetArray));
         PacketNumber++;
     }
 
@@ -265,6 +278,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             // Служебные не изменяемые байты
             //array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
             array[0] = 0b11000100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_CTS]
+            //array[0] = 0b00001000; // [PKT_TYPE_DATA | PKT_SUBTYPE_DATA_D] // НЕ РАБОТАЕТ
             array[1] = 0x70; // Идентификатор ZVO пакета (для идентификации ZVO пакетов)
             array[2] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
             array[3] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
@@ -308,7 +322,7 @@ public class ZvoRadio(string apIp, ushort apPort)
                 Check = ChunkState.ErrorHeaderCrc;
                 return;
             }
-            if (PrintLog) Console.WriteLine("");
+            if (PrintLog) Console.WriteLine(" OK");
         }
 
         public bool DataCrc32Check() // +
