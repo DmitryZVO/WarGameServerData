@@ -243,18 +243,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             {
                 ms.Write(radio[i]);
             }
-            /*
-            ms.Write([
-                0b00001000, 
-                0x00, 
-                0, 0, 
-                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // reciever
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sender
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // filtered
-                0x00, 0x00]);
-            var d = ms.ToArray();
-            */
-            ms.Write(send.GetNormalData());
+            ms.Write(send.GetArray);
             var d = ms.ToArray();
             await udp.SendAsync(d, apIp, apPort, _ct);
         }

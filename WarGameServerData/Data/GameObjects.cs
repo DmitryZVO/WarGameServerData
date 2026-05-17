@@ -66,7 +66,7 @@ public class GameObjects
         var send = data.ToArray();
 
         if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
-        //if (obj.Telem.UseZvo) 
+        if (obj.Telem.UseZvo) 
             await Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send.Length;
     }
@@ -455,16 +455,6 @@ public class H264ChunkDecoder
 
         //if (Number == 2010) Console.Write($"recv! {frameNumber:0}, cut {cut:0}, end={endCut > 0}\n");
 
-        if (Number == 2010)
-        {
-            if ((DateTime.Now - lastTime).TotalMilliseconds > 1000)
-            {
-                lastTime = DateTime.Now;
-                Console.WriteLine($"dropped = {dropped} packets!");
-                dropped = 0;
-            }
-        }
-
         lock (this)
         {
             if (frameNumber == UdpFrameLastNumber)
@@ -474,13 +464,26 @@ public class H264ChunkDecoder
             }
             else
             {
+                if (Number == 2001)
+                {
+                    //Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} frame={frameNumber}, end={endCut>0}");
+                    if ((DateTime.Now - lastTime).TotalMilliseconds > 1000)
+                    {
+                        lastTime = DateTime.Now;
+                        Console.WriteLine($"dropped = {dropped} packets!");
+                        dropped = 0;
+                    }
+                }
+
                 if (frameNumber != (UdpFrameLastNumber + 1))
-                    if (Number == 2010)
+                {
+                    if (Number == 2001)
                     {
                         var drop = (int)(frameNumber - (UdpFrameLastNumber + 1));
                         //Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} DROP={drop}");
                         dropped += drop;
                     }
+                }
             }
 
             if (frameNumber != UdpFrameNumber)

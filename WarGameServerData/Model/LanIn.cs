@@ -77,7 +77,11 @@ public class LanIn
                 var data = result.Buffer;
                 // Парсинг входящего пакета
                 await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.241", data);
-                if (!client.Address.ToString().Equals("127.0.0.1")) CounterMeshHB++;
+                if ((data[0] & 0b01111111) == 0x00)
+                {
+                    if (!client.Address.ToString().Equals("127.0.0.1")) CounterMeshHB++;
+                    if (client.Address.ToString().Equals("127.0.0.1")) CounterZvoHB++;
+                }
             }
             catch (Exception e)
             {
@@ -90,7 +94,6 @@ public class LanIn
     public async Task RecvZvoPacket(byte[] data)
     {
         await new UdpClient().SendAsync(data, "127.0.0.1", UdpPortHb);
-        CounterZvoHB++;
     }
 
     public async void StartAsync()
