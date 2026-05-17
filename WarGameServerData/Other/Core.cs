@@ -47,8 +47,8 @@ internal class Core
             .Build();
 
         var radio = IoC.Services.GetRequiredService<ZvoRadio>();
-        //radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 20, [0, 0, 9, 0, 4, 0, 0, 0, 2]);
-        radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 20, [0, 0, 11, 0, 0, 0, 8, 0, 15, 12, 15]);
+        radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 10, [0, 0, 9, 0, 4, 0, 0, 0, 2]);
+        //radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 20, [0, 0, 11, 0, 0, 0, 8, 0, 15, 12, 0]);
         //radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 500, [0, 0, 11, 0, 0, 0, 8, 0, 15, 13, 7]); // ZVO_RATE_2_B_1Mbit_20MHz_CCK, SGI
         radio.StartAsync();
 
