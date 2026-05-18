@@ -564,7 +564,7 @@ public class GameObjectTelem // Параметры телеметрии
     [JsonIgnore] public int MBitServerInBytesCounter { get; set; } // Счетчик приема данных в байтах
     [JsonIgnore] public int MBitServerOutBytesCounter { get; set; } // Счетчик передачи данных в байтах
     [JsonIgnore] public bool UseMesh { get; set; } // Использование MESH связи
-    [JsonIgnore] public bool UseZvo { get; set; } // Использование ZVO связи
+    [JsonIgnore] public bool UseZvo { get; set; } = true; // Использование ZVO связи
 }
 public class RcChannelsForWrite
 {
