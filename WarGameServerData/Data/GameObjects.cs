@@ -274,7 +274,7 @@ public class CameraFrame
     public static readonly Size DefFrameSizeH = new(1920, 1408); // Максимальный размер фрейма (High)
     public static readonly Size DefFrameSizeM = new(1280, 704); // Максимальный размер фрейма (Medium)
     public static readonly Size DefFrameSizeL = new(640, 448); // Максимальный размер фрейма (Low)
-    public static readonly Size DefFrameSizeExL = new(320, 192); // Максимальный размер фрейма (ExtraLow)
+    public static readonly Size DefFrameSizeExL = new(640, 192); // Максимальный размер фрейма (ExtraLow)
     public int Fps { get; set; } // Частота входящих успешнодекодированных кадров
 
     public byte[] FrameToSend { get; set; } // Текущий собраный кадр (для отправки клиентам)
@@ -416,7 +416,7 @@ public class CameraFrame
 public class H264ChunkDecoder
 {
     public Mat FrameChunk = new();
-    public readonly static Size BlockSize = new(320, 64); // Должно быть кратно 16x16 (это минимальный блок кодирования h264 по умолчанию) 160x160 = 10x10 блоков, 80x80 = 5x5 блоков, 64x64 = 4x4 блока, 32x32 = 2x2 блока
+    public readonly static Size BlockSize = new(640, 32); // Должно быть кратно 16x16 (это минимальный блок кодирования h264 по умолчанию) 160x160 = 10x10 блоков, 80x80 = 5x5 блоков, 64x64 = 4x4 блока, 32x32 = 2x2 блока
 
     public int Number { get; } // Номер чанка
     public long UdpFrameNumber { get; set; } // Текущий номер кадра (для сборки)
