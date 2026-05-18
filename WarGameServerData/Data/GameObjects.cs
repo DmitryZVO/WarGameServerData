@@ -66,8 +66,7 @@ public class GameObjects
         var send = data.ToArray();
 
         if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
-        if (obj.Telem.UseZvo) 
-            await Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
+        if (obj.Telem.UseZvo) await Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
         obj.Telem.MBitServerOutBytesCounter += send.Length;
     }
     public static async Task SendCommandAsync(GameObject obj)
@@ -81,6 +80,7 @@ public class GameObjects
         data.WriteByte(0x04 + 0b00000000); // Пакет с командой
         data.Write(BitConverter.GetBytes(command));
         var send = data.ToArray();
+
 
         if (obj.Telem.UseMesh) await new UdpClient().SendAsync(send, obj.Ip, PortInFromServer, new CancellationTokenSource(100).Token);
         if (obj.Telem.UseZvo) await Core.IoC.Services.GetRequiredService<ZvoRadio>().Send(send, ZvoRadio.TransferMode.MaxRange);
@@ -131,7 +131,6 @@ public class GameObjects
         var id = dataZip[1] & 0b00001111;
 
         var data = useZip ? ZvoRadio.DecompressZip(dataZip[2..]) : dataZip[2..];
-
 
         // Находим или создаем новый игровой объект
         GameObject? obj;
@@ -198,7 +197,7 @@ public class GameObjects
                     tempEnable[4] = data[seek]; seek += 1;
                     obj.Telem.EnableCheck = BitConverter.ToUInt64(tempEnable, 0);
                     obj.Telem.UseMesh = (obj.Telem.EnableCheck & 0b0000000000000000000000000000010000000000000000000000000000000000) > 0;
-                    obj.Telem.UseZvo = (obj.Telem.EnableCheck & 0b0000000000000000000000000000100000000000000000000000000000000000) > 0;
+                    obj.Telem.UseZvo = (obj.Telem.EnableCheck &  0b0000000000000000000000000000100000000000000000000000000000000000) > 0;
                     obj.Telem.QualityMeshGroundToWater = data[seek] / 10.0f; seek += 1;
                     obj.Telem.QualityZvoGroundToWater = data[seek] / 10.0f; seek += 1;
                     obj.Telem.QueueZvoWaterToGroundSend = data[seek]; seek += 1;
@@ -564,7 +563,7 @@ public class GameObjectTelem // Параметры телеметрии
     [JsonIgnore] public int MBitServerInBytesCounter { get; set; } // Счетчик приема данных в байтах
     [JsonIgnore] public int MBitServerOutBytesCounter { get; set; } // Счетчик передачи данных в байтах
     [JsonIgnore] public bool UseMesh { get; set; } // Использование MESH связи
-    [JsonIgnore] public bool UseZvo { get; set; } = true; // Использование ZVO связи
+    [JsonIgnore] public bool UseZvo { get; set; } // Использование ZVO связи
 }
 public class RcChannelsForWrite
 {

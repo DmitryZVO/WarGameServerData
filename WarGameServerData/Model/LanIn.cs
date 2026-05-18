@@ -7,7 +7,7 @@ namespace WarGameServerData.Model;
 
 public class LanIn
 {
-    public const int UdpPortHb = 7777; // Штатный порт UDP для получения Heartbeat от игровых объектов (с отправкой пакетов-request в ответ)
+    public const int UdpPortHb = 8000; // Штатный порт UDP для получения Heartbeat от игровых объектов (с отправкой пакетов-request в ответ)
     public const int UdpPortZvo = 2222; // Штатный порт UDP для получения пакетов от радио ZVO
 
     // Структура любого правильного пакета:
@@ -76,7 +76,7 @@ public class LanIn
                 var client = result.RemoteEndPoint;
                 var data = result.Buffer;
                 // Парсинг входящего пакета
-                await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.240", data); // ZVO
+                await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.240", data); // ZVO+MESH
                 if ((data[0] & 0b01111111) == 0x00)
                 {
                     if (!client.Address.ToString().Equals("127.0.0.1")) CounterMeshHB++;
