@@ -49,7 +49,7 @@ internal class Core
         var radio = IoC.Services.GetRequiredService<ZvoRadio>();
         //radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 80, [0, 0, 9, 0, 4, 0, 0, 0, 2]); // потолок 802.11b
         //radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 20, [0, 0, 9, 0, 4, 0, 0, 0, 2]); // потолок 802.11b
-        radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 2, [0, 0, 11, 0, 0, 0, 8, 0, 15, 12, 0]); // потолок 802.11g
+        radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 5, [0, 0, 11, 0, 0, 0, 8, 0, 15, 12, 0]); // потолок 802.11g
         //radio.AddRadioHead(ZvoRadio.TransferMode.MaxRange, 85, [0, 0, 11, 0, 0, 0, 8, 0, 15, 12, 0]); // потолок 802.11n
         radio.StartAsync();
 
