@@ -268,11 +268,11 @@ public class ZvoRadio(string apIp, ushort apPort)
         public RadioChunk()
         {
             // Служебные не изменяемые байты
-            //array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
+            array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
             //array[0] = 0b11000100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_CTS]
-            array[0] = 0b10001000; // [PKT_TYPE_DATA | PKT_SUBTYPE_DATA_QoS_D] // НЕ РАБОТАЕТ
+            //array[0] = 0b10001000; // [PKT_TYPE_DATA | PKT_SUBTYPE_DATA_QoS_D]
             array[1] = 0x70; // Идентификатор ZVO пакета (для идентификации ZVO пакетов)
-            array[2] = 0b0000_0000; // Duraton/ID (использовать нельзя, меняется при пересылке) но используем для задания кол-ва повторов b0-3]
+            array[2] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
             array[3] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
             array[4] = 0; array[5] = 0; // Номер пакета (UInt16)
             array[6] = 0; array[7] = 0; // Длина полезные данных (UInt16) (чистых байт, без XOR)

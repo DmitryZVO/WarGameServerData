@@ -292,6 +292,16 @@ public class CameraFrame
         Object = obj;
         Frame = new Mat();
 
+        var config = Converter.GetCurrentConfig();
+
+        config.EnableSSE = 1;
+        config.EnableNeon = 1;
+        config.EnableAvx2 = 1;
+        config.NumThreads = 4;// default is 1
+
+        config.EnableCustomthreadPool = 1;
+        Converter.SetConfig(config);
+
         for (var i = 0; i < MaxChunks; i++)
         {
             H264ChunkDecoders.Add(new(this, i));
@@ -415,7 +425,7 @@ public class CameraFrame
 public class H264ChunkDecoder
 {
     public Mat FrameChunk = new();
-    public readonly static Size BlockSize = new(640, 32); // Должно быть кратно 16x16 (это минимальный блок кодирования h264 по умолчанию) 160x160 = 10x10 блоков, 80x80 = 5x5 блоков, 64x64 = 4x4 блока, 32x32 = 2x2 блока
+    public readonly static Size BlockSize = new(640, 64); // Должно быть кратно 16x16 (это минимальный блок кодирования h264 по умолчанию) 160x160 = 10x10 блоков, 80x80 = 5x5 блоков, 64x64 = 4x4 блока, 32x32 = 2x2 блока
 
     public int Number { get; } // Номер чанка
     public long UdpFrameNumber { get; set; } // Текущий номер кадра (для сборки)
@@ -439,7 +449,7 @@ public class H264ChunkDecoder
         var decParam = new TagSVCDecodingParam
         {
             uiTargetDqLayer = 0xFF,
-            eEcActiveIdc = ERROR_CON_IDC.ERROR_CON_DISABLE,
+            eEcActiveIdc = ERROR_CON_IDC.ERROR_CON_SLICE_COPY_CROSS_IDR_FREEZE_RES_CHANGE,
             bParseOnly = false,
         };
         decParam.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_TYPE.VIDEO_BITSTREAM_DEFAULT;
@@ -449,58 +459,32 @@ public class H264ChunkDecoder
     public void ReadChunkPacket(byte[] data)
     {
         var frameNumber = data[0]; // Номер кадра
-        //var cut = data[1]; // Номер куска
+        var cut = data[1]; // Номер куска
         var endCut = BitConverter.ToUInt16(data, 2) & 0b1000000000000000;
 
         //if (Number == 2010) Console.Write($"recv! {frameNumber:0}, cut {cut:0}, end={endCut > 0}\n");
 
-        lock (this)
-        {
+        //if (Number == 2001)
+        //{
             if (frameNumber == UdpFrameLastNumber)
             {
-                //if (Number == 2010) Console.WriteLine($" double frame!");
-                return;
+                //Console.WriteLine("frame double!");
+            }
+
+            UdpFrameNumber = frameNumber;
+            UdpFrame.Write(data, 4, data.Length - 4); // Записываем кусок данных
+
+            if (endCut > 0) // Это финальный кусок, пора пересоздавать матрицу кадра
+            {
+                //Console.Write($"frame {frameNumber} [cut {cut}]");
+                UdpFrameLastNumber = frameNumber;
+                DecodeChunk();
             }
             else
             {
-                if (Number == 2001)
-                {
-                    //Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} frame={frameNumber}, end={endCut>0}");
-                    if ((DateTime.Now - lastTime).TotalMilliseconds > 1000)
-                    {
-                        lastTime = DateTime.Now;
-                        Console.WriteLine($"dropped = {dropped} packets!");
-                        dropped = 0;
-                    }
-                }
-
-                if (frameNumber != (UdpFrameLastNumber + 1))
-                {
-                    if (Number == 2001)
-                    {
-                        var drop = (int)(frameNumber - (UdpFrameLastNumber + 1));
-                        //Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} DROP={drop}");
-                        dropped += drop;
-                    }
-                }
+                //Console.WriteLine($"frame {frameNumber} [cut {cut}]");
             }
-
-            if (frameNumber != UdpFrameNumber)
-            {
-                UdpFrame = new MemoryStream();
-                UdpFrameLastNumber = UdpFrameNumber;
-            }
-            UdpFrameNumber = frameNumber;
-            UdpFrame.Write(data, 4, data.Length - 4); // Записываем кусок данных
-        }
-
-        if (endCut > 0) // Это финальный кусок, пора пересоздавать матрицу кадра
-        {
-            UdpFrameLastNumber = frameNumber;
-            DecodeChunk();
-            //if (Number == 2010) Console.WriteLine($" OK");
-        }
-
+        //}
     }
 
     public void DecodeChunk()
@@ -515,7 +499,7 @@ public class H264ChunkDecoder
             }
 
             var rgb = new RgbImage(ImageFormat.Rgb, BlockSize.Width, BlockSize.Height);
-            if (_decoder.Decode(dataArr, 0, dataArr.Length, true, out var _, ref rgb) != false)
+            if (_decoder.Decode(dataArr, 0, dataArr.Length, true, out var state, ref rgb) == true)
             {
                 lock (FrameChunk)
                 {
@@ -523,7 +507,11 @@ public class H264ChunkDecoder
                     FrameChunk = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, rgb.GetBytes());
                     LastUpdate = DateTime.Now;
                 }
-
+                //Console.WriteLine(" OK!");
+            }
+            else
+            {
+                //Console.WriteLine(" DECODE ERROR!");
             }
             rgb.Dispose();
             UdpFrame = new MemoryStream();
