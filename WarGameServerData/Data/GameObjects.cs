@@ -157,7 +157,7 @@ public class GameObjects
 
         switch (type)
         {
-            case 1 when packType == 0x00: // пакет HeartBeat
+            case 1 when packType == 0x10: // пакет HeartBeat
                 {
                     var seek = 0;
                     obj.LonX = BitConverter.ToSingle(data, seek); seek += 4; // LonX
@@ -201,21 +201,21 @@ public class GameObjects
                     obj.Telem.QualityMeshGroundToWater = data[seek] / 10.0f; seek += 1;
                     obj.Telem.QualityZvoGroundToWater = data[seek] / 10.0f; seek += 1;
                     obj.Telem.QueueZvoWaterToGroundSend = data[seek]; seek += 1;
-                    obj.Telem.MbitsZvoWaterToGroundSend = BitConverter.ToUInt16(data, seek) / (float)ushort.MaxValue; seek += 2;
-                    obj.Telem.MbitsZvoWaterToGroundRecv = BitConverter.ToUInt16(data, seek) / (float)ushort.MaxValue; seek += 2;
+                    obj.Telem.MbitsZvoWaterToGroundSend = BitConverter.ToUInt16(data, seek) / 1000.0f; seek += 2;
+                    obj.Telem.MbitsZvoWaterToGroundRecv = BitConverter.ToUInt16(data, seek) / 1000.0f; seek += 2;
                     return;
                 }
-            case 1 when packType == 0x02: // пакет запроса перезаписи RC каналов
+            case 1 when packType == 0x12: // пакет запроса перезаписи RC каналов
                 {
                     await SendRcRewriteAsync(obj, data[0]);
                     return;
                 }
-            case 1 when packType == 0x04: // пакет запроса команды на исполнение
+            case 1 when packType == 0x14: // пакет запроса команды на исполнение
                 {
                     await SendCommandAsync(obj);
                     return;
                 }
-            case 1 when packType == 0x08: // пакет с куском видео
+            case 1 when packType == 0x18: // пакет с куском видео
                 {
                     var frameNumber = data[0]; // Номер кадра
                     var chunkNumber = BitConverter.ToUInt16(data, 2) & 0b0111111111111111; // Номер чанка-декодера

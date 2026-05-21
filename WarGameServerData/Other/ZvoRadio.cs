@@ -7,16 +7,17 @@ namespace WarGameServerData.Other;
 
 public class ZvoRadio(string apIp, ushort apPort)
 {
-    public static bool PrintLog => false;
+    public static bool PrintLog => true;
 
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
     public const byte SizeDataCrc32 = 4; // Размер CRC32 блока данных
-    public const byte SizeBlocForkXor = 16; // Какими блоками кодируем XOR для восстановления
+    public const byte SizeBlocForkXor = 8; // Какими блоками кодируем XOR для восстановления
     public const int DataCrc32SizeXored = 8; // CRC32 данных кодируется каждый байт + CRC8
     public const bool PhySendPacketCrc32 = true; // Есть ли в конце пакета FCS_CRC
     public static byte BigSizeBlockXor => (SizeBlocForkXor + 1); // Общий размер блока XOR вместе с байтами CRC8
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16); // Стартовое смещение от начала заголовка
+    private int recvGood, recvBad, recvAll, sendAll; 
 
     public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
 
@@ -39,7 +40,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 
     private byte PacketNumber = 0; // циклический номер пакета
 
-    private readonly ConcurrentQueue<RadioChunk> ChunksSend = new(); // Чанки для оправки
+    //private readonly ConcurrentQueue<RadioChunk> ChunksSend = new(); // Чанки для оправки
     private RadioChunk? LastValidChunk; // Последний валидный пакет
     private readonly CancellationToken _ct = new();
 
@@ -109,7 +110,11 @@ public class ZvoRadio(string apIp, ushort apPort)
         while (!_ct.IsCancellationRequested)
         {
             await Task.Delay(1000, _ct);
-            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: ForSend={ChunksSend.Count:0}, PacketsRecv={0}");
+            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: PacketsSend: [{sendAll:0}], AP_SEND={ApRadioPacketsSend:0} | PacketsRecv: [{recvAll:0}], AP_RECV={ApRadioPacketsRecv:0} | good/bad: [{recvGood:0}/{recvBad:0}] ({(1.0f - recvBad / (float)recvAll) * 100.0:0.00}%)");
+            recvAll = 0;
+            recvBad = 0;
+            recvGood = 0;
+            sendAll = 0;
         }
     }
 
@@ -127,16 +132,22 @@ public class ZvoRadio(string apIp, ushort apPort)
             var result = await connect.ReceiveAsync(_ct);
             var sender = result.RemoteEndPoint;
             var data = result.Buffer;
+            recvAll++;
 
             if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
-            if (data.Length < SeekStart + SizeDataCrc32) continue; // Огрызок пакета
-            var dataChunk = data[..(PhySendPacketCrc32 ? ^4 : ^0)]; // чанк ZVO
-            if (data.Length > 360)
+            if (data.Length < SeekStart + SizeDataCrc32)
             {
-
+                recvBad++;
+                continue; // Огрызок пакета
             }
+            var dataChunk = data[..(PhySendPacketCrc32 ? ^4 : ^0)]; // чанк ZVO
             var chunk = new RadioChunk(dataChunk);
-            if (chunk.Check != ChunkState.OK) continue;
+            if (chunk.Check != ChunkState.OK)
+            {
+                recvBad++;
+                continue;
+            }
+            recvGood++;
 
             LastValidChunk ??= chunk;
 
@@ -246,6 +257,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             ms.Write(send.GetArray);
             var d = ms.ToArray();
             await udp.SendAsync(d, apIp, apPort, _ct);
+            sendAll++;
         }
         //if (PrintLog) Console.WriteLine(Convert.ToHexString(send.GetArray));
         PacketNumber++;
@@ -291,7 +303,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             var lenData = BitConverter.ToUInt16(data, 5);
             if (data.Length != SeekStart + (SizeRoundedData(lenData) / SizeBlocForkXor) * BigSizeBlockXor + DataCrc32SizeXored)
             {
-                if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_ERROR, len={data.Length}!={SeekStart + lenData * 2}");
+                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_ERROR, len={data.Length}!={SeekStart + lenData * 2}");
                 Check = ChunkState.ErrorSize;
                 return;
             }
@@ -301,20 +313,19 @@ public class ZvoRadio(string apIp, ushort apPort)
                 data[2] = 0x00; // обязательная перезапись, т.к. меняется при пересылке
                 data[3] = 0x00; // обязательная перезапись, т.к. меняется при пересылке
             }
-            if (PrintLog) Console.Write(Convert.ToHexString(data));
             if (data[1] != 0x70)
             {
-                if (PrintLog) Console.WriteLine(" ZVO_ERROR");
+                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, ZVO_ERROR");
                 Check = ChunkState.ErrorZvo;
                 return;
             }
             if (!CRC16(data[..SizeHeader]).SequenceEqual(data[SizeHeader..SeekStart]))
             {
-                if (PrintLog) Console.WriteLine(" CRC_ERROR");
+                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, CRC_ERROR");
                 Check = ChunkState.ErrorHeaderCrc;
                 return;
             }
-            if (PrintLog) Console.WriteLine(" OK");
+            //if (PrintLog) Console.WriteLine(" OK");
         }
 
         public bool DataCrc32Check() // +

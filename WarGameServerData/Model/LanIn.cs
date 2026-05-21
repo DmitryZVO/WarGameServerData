@@ -77,7 +77,7 @@ public class LanIn
                 var data = result.Buffer;
                 // Парсинг входящего пакета
                 await Core.IoC.Services.GetRequiredService<GameObjects>().ParseUdpPacketAsync("192.168.1.241", data); // ZVO+MESH
-                if ((data[0] & 0b01111111) == 0x00)
+                if ((data[0] & 0b01111111) == 0x10)
                 {
                     if (!client.Address.ToString().Equals("127.0.0.1")) CounterMeshHB++;
                     if (client.Address.ToString().Equals("127.0.0.1")) CounterZvoHB++;
