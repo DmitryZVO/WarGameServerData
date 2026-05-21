@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Net.Sockets;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace WarGameServerData.Other;
 
@@ -12,7 +13,7 @@ public class ZvoRadio(string apIp, ushort apPort)
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
     public const byte SizeDataCrc32 = 4; // Размер CRC32 блока данных
-    public const byte SizeBlocForkXor = 8; // Какими блоками кодируем XOR для восстановления
+    public const byte SizeBlocForkXor = 64; // Какими блоками кодируем XOR для восстановления
     public const int DataCrc32SizeXored = 8; // CRC32 данных кодируется каждый байт + CRC8
     public const bool PhySendPacketCrc32 = true; // Есть ли в конце пакета FCS_CRC
     public static byte BigSizeBlockXor => (SizeBlocForkXor + 1); // Общий размер блока XOR вместе с байтами CRC8
@@ -110,7 +111,7 @@ public class ZvoRadio(string apIp, ushort apPort)
         while (!_ct.IsCancellationRequested)
         {
             await Task.Delay(1000, _ct);
-            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: PacketsSend: [{sendAll:0}], AP_SEND={ApRadioPacketsSend:0} | PacketsRecv: [{recvAll:0}], AP_RECV={ApRadioPacketsRecv:0} | good/bad: [{recvGood:0}/{recvBad:0}] ({(1.0f - recvBad / (float)recvAll) * 100.0:0.00}%), recvRest={recvRest:0}");
+            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: PacketsSend: [{sendAll:0}], AP_SEND={ApRadioPacketsSend:0} | PacketsRecv: [{recvAll:0}], AP_RECV={ApRadioPacketsRecv:0} | good/bad: [{recvGood:0}/{recvBad:0}] ({(1.0f - recvBad / (float)recvAll) * 100.0:0.00}%), recvRest={recvRest:0} (+{recvRest / (float)recvAll * 100.0:0.00}%)");
             recvAll = 0;
             recvBad = 0;
             recvGood = 0;
@@ -148,7 +149,7 @@ public class ZvoRadio(string apIp, ushort apPort)
                 recvBad++;
                 continue;
             }
-            recvGood++;
+            if (chunk.DataIsValid) recvGood++; else recvBad++;
 
             LastValidChunk ??= chunk;
 
@@ -382,7 +383,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public byte[] GetXorData()
         {
-            return array[SeekStart..(SeekStart + DataSizeOriginal * BigSizeBlockXor)];
+            return array[SeekStart..(SeekStart + (DataSizeOriginal / SizeBlocForkXor + (DataSizeOriginal % SizeBlocForkXor > 0 ? 1 : 0)) * BigSizeBlockXor)];
         }
 
         public bool CheckXorData()
