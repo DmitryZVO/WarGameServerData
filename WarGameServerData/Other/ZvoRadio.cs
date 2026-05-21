@@ -39,7 +39,7 @@ public class ZvoRadio(string apIp, ushort apPort)
     private readonly List<byte[]> RadioHeadersVideoM = [];
     private readonly List<byte[]> RadioHeadersVideoH = [];
 
-    private byte PacketNumber = 0; // циклический номер пакета
+    private ushort PacketNumber = 0; // циклический номер пакета
 
     //private readonly ConcurrentQueue<RadioChunk> ChunksSend = new(); // Чанки для оправки
     private RadioChunk? LastValidChunk; // Последний валидный пакет
@@ -270,8 +270,8 @@ public class ZvoRadio(string apIp, ushort apPort)
     {
         public ChunkState Check { get; }
         public TransferMode TransferMode { get; set; }
-        public byte PacketNumber { get { return array[4]; } set { array[4] = value; } }
-        public ushort DataSizeOriginal { get { return BitConverter.ToUInt16(array, 5); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 5, 2); } }
+        public ushort PacketNumber { get { return BitConverter.ToUInt16(array, 4); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 4, 2); } }
+        public ushort DataSizeOriginal { get { return BitConverter.ToUInt16(array, 6); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 6, 2); } }
         public bool DataIsValid => CheckXorData() & DataCrc32Check();
         public byte[] Data => GetNormalData();
         public byte[] GetArray => array[..(SeekStart + (SizeRoundedData(DataSizeOriginal) / SizeBlocForkXor) * BigSizeBlockXor + DataCrc32SizeXored)];
@@ -303,7 +303,7 @@ public class ZvoRadio(string apIp, ushort apPort)
                 return;
             }
 
-            var lenData = BitConverter.ToUInt16(data, 5);
+            var lenData = BitConverter.ToUInt16(data, 6);
             if (data.Length != SeekStart + (SizeRoundedData(lenData) / SizeBlocForkXor) * BigSizeBlockXor + DataCrc32SizeXored)
             {
                 //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_ERROR, len={data.Length}!={SeekStart + lenData * 2}");
@@ -383,7 +383,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 
         public byte[] GetXorData()
         {
-            return array[SeekStart..(SeekStart + (DataSizeOriginal / SizeBlocForkXor + (DataSizeOriginal % SizeBlocForkXor > 0 ? 1 : 0)) * BigSizeBlockXor)];
+            return array[SeekStart..(SeekStart + DataSizeXored)];
         }
 
         public bool CheckXorData()
