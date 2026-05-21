@@ -17,7 +17,7 @@ public class ZvoRadio(string apIp, ushort apPort)
     public const bool PhySendPacketCrc32 = true; // Есть ли в конце пакета FCS_CRC
     public static byte BigSizeBlockXor => (SizeBlocForkXor + 1); // Общий размер блока XOR вместе с байтами CRC8
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16); // Стартовое смещение от начала заголовка
-    private int recvGood, recvBad, recvAll, sendAll; 
+    private int recvGood, recvBad, recvAll, recvRest, sendAll; 
 
     public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
 
@@ -110,11 +110,12 @@ public class ZvoRadio(string apIp, ushort apPort)
         while (!_ct.IsCancellationRequested)
         {
             await Task.Delay(1000, _ct);
-            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: PacketsSend: [{sendAll:0}], AP_SEND={ApRadioPacketsSend:0} | PacketsRecv: [{recvAll:0}], AP_RECV={ApRadioPacketsRecv:0} | good/bad: [{recvGood:0}/{recvBad:0}] ({(1.0f - recvBad / (float)recvAll) * 100.0:0.00}%)");
+            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: PacketsSend: [{sendAll:0}], AP_SEND={ApRadioPacketsSend:0} | PacketsRecv: [{recvAll:0}], AP_RECV={ApRadioPacketsRecv:0} | good/bad: [{recvGood:0}/{recvBad:0}] ({(1.0f - recvBad / (float)recvAll) * 100.0:0.00}%), recvRest={recvRest:0}");
             recvAll = 0;
             recvBad = 0;
             recvGood = 0;
             sendAll = 0;
+            recvRest = 0;
         }
     }
 
@@ -155,6 +156,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             {
                 if (LastValidChunk.DataIsValid) continue; // Игнорируем повторы при прошлом валидном пакете 
                 LastValidChunk.WriteNewXorData(chunk.GetXorData()); // Пробуем восстановить пакет
+                if (LastValidChunk.DataIsValid) recvRest++; // Если восстановили - увечиливаем счетчик
             }
             else // Пришел новый пакет, пора отправлять старый
             {
