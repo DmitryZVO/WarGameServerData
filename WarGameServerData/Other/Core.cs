@@ -31,7 +31,7 @@ internal class Core
                 services.AddSingleton<StaticObjects>();
                 services.AddSingleton<GameObjects>();
                 services.AddSingleton<LanIn>();
-                services.AddSingleton(sp => new ZvoRadio("192.168.1.51", 2222))
+                services.AddSingleton(sp => new ZvoRadio("192.168.1.52", 2222))
                 ;
             })
             .ConfigureLogging(builder =>

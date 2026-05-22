@@ -18,7 +18,7 @@ public class ZvoRadio(string apIp, ushort apPort)
     public const bool PhySendPacketCrc32 = true; // Есть ли в конце пакета FCS_CRC
     public static byte BigSizeBlockXor => (SizeBlocForkXor + 1); // Общий размер блока XOR вместе с байтами CRC8
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16); // Стартовое смещение от начала заголовка
-    private int recvGood, recvBad, recvAll, recvRest, sendAll; 
+    private int recvGood, recvBad, recvHeadBad, recvAll, recvRest, sendAll; 
 
     public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
 
@@ -111,8 +111,9 @@ public class ZvoRadio(string apIp, ushort apPort)
         while (!_ct.IsCancellationRequested)
         {
             await Task.Delay(1000, _ct);
-            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: PacketsSend: [{sendAll:0}], AP_SEND={ApRadioPacketsSend:0} | PacketsRecv: [{recvAll:0}], AP_RECV={ApRadioPacketsRecv:0} | good/bad: [{recvGood:0}/{recvBad:0}] ({(1.0f - recvBad / (float)recvAll) * 100.0:0.00}%), recvRest={recvRest:0} (+{recvRest / (float)recvAll * 100.0:0.00}%)");
+            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: PacketsSend: [{sendAll:0}], AP_SEND={ApRadioPacketsSend:0} | PacketsRecv all/badH: [{recvAll:0}/{recvHeadBad:0}], AP_RECV={ApRadioPacketsRecv:0} | good/badData: [{recvGood:0}/{recvBad:0}] ({(1.0f - recvBad / (float)recvAll) * 100.0:0.00}%), recvRest={recvRest:0} (+{recvRest / (float)recvAll * 100.0:0.00}%)");
             recvAll = 0;
+            recvHeadBad = 0;
             recvBad = 0;
             recvGood = 0;
             sendAll = 0;
@@ -139,14 +140,14 @@ public class ZvoRadio(string apIp, ushort apPort)
             if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
             if (data.Length < SeekStart + SizeDataCrc32)
             {
-                recvBad++;
+                recvHeadBad++;
                 continue; // Огрызок пакета
             }
             var dataChunk = data[..(PhySendPacketCrc32 ? ^4 : ^0)]; // чанк ZVO
             var chunk = new RadioChunk(dataChunk);
             if (chunk.Check != ChunkState.OK)
             {
-                recvBad++;
+                recvHeadBad++;
                 continue;
             }
             if (chunk.DataIsValid) recvGood++; else recvBad++;
