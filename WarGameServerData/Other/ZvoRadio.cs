@@ -2,7 +2,6 @@
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Net.Sockets;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace WarGameServerData.Other;
 
@@ -157,7 +156,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             if (chunk.PacketNumber == LastValidChunk.PacketNumber) // Это повтор
             {
                 if (LastValidChunk.DataIsValid) continue; // Игнорируем повторы при прошлом валидном пакете 
-                LastValidChunk.WriteNewXorData(chunk.GetXorData()); // Пробуем восстановить пакет
+                LastValidChunk.RestorePacket(chunk.GetXorData()); // Пробуем восстановить пакет
                 if (LastValidChunk.DataIsValid) recvRest++; // Если восстановили - увечиливаем счетчик
             }
             else // Пришел новый пакет, пора отправлять старый
@@ -370,7 +369,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             return ret[..DataSizeOriginal];
         }
 
-        public void WriteNewXorData(byte[] data)
+        public void RestorePacket(byte[] data)
         {
             var len = data.Length / SizeBlocForkXor + (data.Length % SizeBlocForkXor > 0 ? SizeBlocForkXor : 0);
             for (var i = 0; i < len; i += BigSizeBlockXor)
