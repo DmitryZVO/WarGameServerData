@@ -8,7 +8,7 @@ public class ZvoRadio (string apIp, int apPort)
 {
     public static bool PrintLog => true;
 
-    public const byte SizeBlocForkXor = 64; // Какими блоками кодируем XOR для восстановления
+    public const byte SizeBlocForkXor = 64; // Какими блоками кодируем XOR для восстановления (лучшие результаты)
 
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
