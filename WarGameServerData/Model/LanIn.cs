@@ -91,7 +91,7 @@ public class LanIn
         connect.Close();
     }
 
-    public async Task RecvZvoPacket(byte[] data)
+    public static async Task RecvZvoPacket(byte[] data)
     {
         await new UdpClient().SendAsync(data, "127.0.0.1", UdpPortHb);
     }

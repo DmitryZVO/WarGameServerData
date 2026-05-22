@@ -4,11 +4,11 @@ using System.Net.Sockets;
 
 namespace WarGameServerData.Other;
 
-public class ZvoRadio(string apIp, ushort apPort)
+public class ZvoRadio (string apIp, int apPort)
 {
     public static bool PrintLog => true;
 
-    public const byte SizeBlocForkXor = 32; // Какими блоками кодируем XOR для восстановления
+    public const byte SizeBlocForkXor = 64; // Какими блоками кодируем XOR для восстановления
 
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
@@ -19,6 +19,8 @@ public class ZvoRadio(string apIp, ushort apPort)
     public static byte BigSizeBlockXor => (SizeBlocForkXor + 4); // Общий размер блока XOR вместе с байтами CRC32
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16); // Стартовое смещение от начала заголовка
     private int recvGood, recvBad, recvHeadBad, recvAll, recvRest, sendAll;
+
+    private RadioChunk? LastValidChunk; // Последний успешно принятый чанк
 
     public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
 
@@ -40,9 +42,6 @@ public class ZvoRadio(string apIp, ushort apPort)
     private readonly List<byte[]> RadioHeadersVideoH = [];
 
     private ushort PacketNumber = 0; // циклический номер пакета
-
-    //private readonly ConcurrentQueue<RadioChunk> ChunksSend = new(); // Чанки для оправки
-    private RadioChunk? LastValidChunk; // Последний валидный пакет
     private readonly CancellationToken _ct = new();
 
     public static int SizeRoundedData(int data)
@@ -157,7 +156,7 @@ public class ZvoRadio(string apIp, ushort apPort)
             if (chunk.PacketNumber == LastValidChunk.PacketNumber) // Это повтор
             {
                 if (LastValidChunk.DataIsValid) continue; // Игнорируем повторы при прошлом валидном пакете 
-                var rest = LastValidChunk.RestorePacket(chunk); // Пробуем восстановить пакет
+                LastValidChunk.RestorePacket(chunk); // Пробуем восстановить пакет
                 //Console.Write($"packet {chunk.PacketNumber:0}, restore {rest:0} blocks");
                 if (LastValidChunk.DataIsValid)
                 {
@@ -173,10 +172,11 @@ public class ZvoRadio(string apIp, ushort apPort)
             {
                 if (LastValidChunk.DataIsValid) // Если пакет валиден - отправляем!
                 {
-                    await OnNewPacketAsync.Invoke(LastValidChunk.GetNormalData());
+                    _ = OnNewPacketAsync.Invoke(LastValidChunk.GetNormalData());
                 }
                 LastValidChunk = chunk;
             }
+            
         }
     }
 
@@ -235,7 +235,6 @@ public class ZvoRadio(string apIp, ushort apPort)
         send.CalcAndWriteHeaderCrc16(); // Заполняем CRC16 заголовка
         send.WriteNormalData(data); // Пишем нормальные данные
         send.CalcAndWriteDataCrc32(); // Заполняем CRC32 данных
-        var a = send.DataIsValid;
 
         using var udp = new UdpClient();
         var radio = RadioHeadersMaxRange;
@@ -261,18 +260,21 @@ public class ZvoRadio(string apIp, ushort apPort)
                 radio = RadioHeadersVideoH;
                 break;
         }
+
         for (var i = 0; i < radio.Count; i++)
         {
             using var ms = new MemoryStream();
             lock (radio)
             {
-                ms.Write(radio[i]); // Записываем заголовок Radiotap для инжектирования
+                ms.Write(radio[0]); // Записываем заголовок Radiotap для инжектирования
             }
             ms.Write(send.GetArray); // Записываем оставшийся блок данных и CRC
             var d = ms.ToArray();
             await udp.SendAsync(d, apIp, apPort, _ct);
             sendAll++;
         }
+
+        //}
         //if (PrintLog) Console.WriteLine(Convert.ToHexString(send.GetArray));
         PacketNumber++;
     }

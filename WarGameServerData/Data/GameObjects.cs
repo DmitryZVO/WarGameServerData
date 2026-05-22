@@ -1,7 +1,6 @@
 ﻿using H264Sharp;
 using Microsoft.Extensions.DependencyInjection;
 using OpenCvSharp;
-using System.ComponentModel.DataAnnotations;
 using System.Net.Sockets;
 using System.Text.Json.Serialization;
 using WarGameServerData.Other;
@@ -436,8 +435,6 @@ public class H264ChunkDecoder
     private readonly H264Decoder _decoder;
     private DateTime LastUpdate { get; set; } = DateTime.MinValue;
 
-    private int dropped = 0;
-    private DateTime lastTime = DateTime.MinValue;
     public H264ChunkDecoder(CameraFrame camera, int number)
     {
         Number = camera.Number * 1000 + number;
@@ -453,13 +450,14 @@ public class H264ChunkDecoder
             bParseOnly = false,
         };
         decParam.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_TYPE.VIDEO_BITSTREAM_DEFAULT;
+
         _decoder.Initialize(decParam);
     }
 
     public void ReadChunkPacket(byte[] data)
     {
         var frameNumber = data[0]; // Номер кадра
-        var cut = data[1]; // Номер куска
+        //var cut = data[1]; // Номер куска
         var endCut = BitConverter.ToUInt16(data, 2) & 0b1000000000000000;
 
         //if (Number == 2010) Console.Write($"recv! {frameNumber:0}, cut {cut:0}, end={endCut > 0}\n");
