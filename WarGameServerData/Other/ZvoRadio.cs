@@ -8,7 +8,7 @@ public class ZvoRadio(string apIp, ushort apPort)
 {
     public static bool PrintLog => true;
 
-    public const byte SizeBlocForkXor = 8; // Какими блоками кодируем XOR для восстановления
+    public const byte SizeBlocForkXor = 32; // Какими блоками кодируем XOR для восстановления
 
     public const byte SizeHeader = 8; // Размер заголовка (без CRC)
     public const byte SizeHeaderCrc16 = 2;  // Размер CRC16 блока заголовка
@@ -235,6 +235,7 @@ public class ZvoRadio(string apIp, ushort apPort)
         send.CalcAndWriteHeaderCrc16(); // Заполняем CRC16 заголовка
         send.WriteNormalData(data); // Пишем нормальные данные
         send.CalcAndWriteDataCrc32(); // Заполняем CRC32 данных
+        var a = send.DataIsValid;
 
         using var udp = new UdpClient();
         var radio = RadioHeadersMaxRange;
@@ -363,7 +364,8 @@ public class ZvoRadio(string apIp, ushort apPort)
             for (var i = 0; i < dataRounde.Length; i += SizeBlocForkXor)
             {
                 Array.Copy(dataRounde, i, array, SeekStart + n * BigSizeBlockXor, SizeBlocForkXor);
-                array[SeekStart + n * BigSizeBlockXor + SizeBlocForkXor] = CRC8(dataRounde[i..(i + SizeBlocForkXor)]);
+                Array.Copy(CRC32(dataRounde[i..(i + SizeBlocForkXor)]), 0, array, SeekStart + n * BigSizeBlockXor + SizeBlocForkXor, 4);
+                //array[SeekStart + n * BigSizeBlockXor + SizeBlocForkXor] = CRC8(dataRounde[i..(i + SizeBlocForkXor)]);
                 n++;
             }
         }
@@ -401,8 +403,10 @@ public class ZvoRadio(string apIp, ushort apPort)
             {
                 var nbd = nxd[n..(n + BigSizeBlockXor)];
                 var bd = xd[n..(n + BigSizeBlockXor)];
-                var nbdOk = CRC8(nbd[..^1]) == nbd[^1];
-                var bdOk = CRC8(bd[..^1]) == bd[^1];
+                var nbdOk = CRC32(nbd[..^4]).SequenceEqual(nbd[^4..]);
+                var bdOk = CRC32(bd[..^4]).SequenceEqual(bd[^4..]);
+                //var nbdOk = CRC8(nbd[..^1]) == nbd[^1];
+                //var bdOk = CRC8(bd[..^1]) == bd[^1];
 
                 // Восстанавливаем блок данных
                 if (nbdOk && !bdOk)
@@ -426,14 +430,16 @@ public class ZvoRadio(string apIp, ushort apPort)
         {
             for (var i = 0; i < DataSizeXored; i += BigSizeBlockXor)
             {
-                if (CRC8(array[(SeekStart + i)..(SeekStart + i + SizeBlocForkXor)]) != (byte)(array[SeekStart + i + SizeBlocForkXor])) return false;
+                if (!CRC32(array[(SeekStart + i)..(SeekStart + i + SizeBlocForkXor)]).SequenceEqual(array[(SeekStart + i + SizeBlocForkXor)..(SeekStart + i + SizeBlocForkXor + 4)])) return false;
+                //if (CRC8(array[(SeekStart + i)..(SeekStart + i + SizeBlocForkXor)]) != (byte)(array[SeekStart + i + SizeBlocForkXor])) return false;
             }
             return true;
         }
 
         public bool CheckCrc32Block()
         {
-            if (CRC8(array[(SeekStart + DataSizeXored)..(SeekStart + DataSizeXored + SizeDataCrc32)]) != array[SeekStart + DataSizeXored + SizeDataCrc32]) return false;
+            if (!CRC32(array[(SeekStart + DataSizeXored)..(SeekStart + DataSizeXored + SizeDataCrc32)]).SequenceEqual(array[(SeekStart + DataSizeXored + SizeDataCrc32)..(SeekStart + DataSizeXored + SizeDataCrc32 + 4)])) return false;
+            //if (CRC8(array[(SeekStart + DataSizeXored)..(SeekStart + DataSizeXored + SizeDataCrc32)]) != array[SeekStart + DataSizeXored + SizeDataCrc32]) return false;
             return true;
         }
 
@@ -449,7 +455,8 @@ public class ZvoRadio(string apIp, ushort apPort)
             {
                 array[SeekStart + DataSizeXored + i] = crc32[i];
             }
-            array[SeekStart + DataSizeXored + crc32.Length] = CRC8(crc32);
+            Array.Copy(CRC32(crc32), 0, array, SeekStart + DataSizeXored + 4, 4);
+            //array[SeekStart + DataSizeXored + crc32.Length] = CRC8(crc32);
         }
     }
     public static bool CompressZipIfSmall(byte[] data, out byte[] smaller)
