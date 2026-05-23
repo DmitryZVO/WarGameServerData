@@ -1,5 +1,4 @@
 ﻿using System.Buffers.Binary;
-using System.IO.Compression;
 using System.Net.Sockets;
 
 namespace WarGameServerData.Other;
@@ -19,11 +18,8 @@ public class ZvoRadio (string apIp, int apPort)
     public static byte BigSizeBlockXor => (SizeBlocForkXor + 4); // Общий размер блока XOR вместе с байтами CRC32
     public static int SeekStart => (SizeHeader + SizeHeaderCrc16); // Стартовое смещение от начала заголовка
     private int recvGood, recvBad, recvHeadBad, recvAll, recvRest, sendAll;
-
     private RadioChunk? LastValidChunk; // Последний успешно принятый чанк
-
     public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
-
     public ulong ApLanPacketsSend { get; private set; }
     public ulong ApLanPacketsRecv { get; private set; }
     public ulong ApRadioPacketsSend { get; private set; }
@@ -34,6 +30,7 @@ public class ZvoRadio (string apIp, int apPort)
     public ulong ApRadioBytesRecv { get; private set; }
     public ulong ApLanSendQueue { get; private set; }
     public ulong ApRadioSendQueue { get; private set; }
+    public RadioRepeater Repeater = new();
 
     private readonly List<byte[]> RadioHeadersMaxRange = [];
     private readonly List<byte[]> RadioHeadersVideoEL = [];
@@ -43,6 +40,30 @@ public class ZvoRadio (string apIp, int apPort)
 
     private ushort PacketNumber = 0; // циклический номер пакета
     private readonly CancellationToken _ct = new();
+
+    public class RadioRepeater
+    {
+        public DateTime _lastUpdate = DateTime.MinValue;
+        public bool Alive => (DateTime.Now - _lastUpdate).TotalMilliseconds < 3000;
+        public ulong WtoGbytesRecv { get; private set; }
+        public ulong GtoWbytesRecv { get; private set; }
+        public ulong WtoGpacketsRecv { get; private set; }
+        public ulong GtoWpacketsRecv { get; private set; }
+        public ulong SendQueue { get; private set; }
+
+        public void UpdateValues(byte[] dataHb)
+        {
+            if (dataHb.Length < 44) return;
+
+            var seek = 4;
+            WtoGpacketsRecv = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(dataHb, seek)); seek += 8;
+            GtoWpacketsRecv = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(dataHb, seek)); seek += 8;
+            WtoGbytesRecv = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(dataHb, seek)); seek += 8;
+            GtoWbytesRecv = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(dataHb, seek)); seek += 8;
+            SendQueue = BinaryPrimitives.ReverseEndianness(BitConverter.ToUInt64(dataHb, seek)); //seek += 8;
+            _lastUpdate = DateTime.Now;
+        }
+    }
 
     public static int SizeRoundedData(int data)
     {
@@ -143,6 +164,13 @@ public class ZvoRadio (string apIp, int apPort)
                 continue; // Огрызок пакета
             }
             var dataChunk = data[..(PhySendPacketCrc32 ? ^4 : ^0)]; // чанк ZVO
+
+            if (data[0] == 0b11010100 && data[1] == 0x71) // это пакет от ретранслятора
+            {
+                Repeater.UpdateValues(dataChunk); /// Обновляем данные
+                continue;
+            }
+
             var chunk = new RadioChunk(dataChunk);
             if (chunk.Check != ChunkState.OK)
             {
@@ -297,8 +325,6 @@ public class ZvoRadio (string apIp, int apPort)
         {
             // Служебные не изменяемые байты
             array[0] = 0b11010100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_ACK]
-            //array[0] = 0b11000100; // [PKT_TYPE_CTRL|PKT_SUBTYPE_CTRL_CTS]
-            //array[0] = 0b10001000; // [PKT_TYPE_DATA | PKT_SUBTYPE_DATA_QoS_D]
             array[1] = 0x70; // Идентификатор ZVO пакета (для идентификации ZVO пакетов)
             array[2] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)
             array[3] = 0x00; // Duraton/ID (использовать нельзя, меняется при пересылке)

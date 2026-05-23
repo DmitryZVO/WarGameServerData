@@ -537,6 +537,12 @@ public class GameObjectTelem // Параметры телеметрии
     public byte QueueZvoGroundToWaterSend { get; set; } // Очередь отправки пакетов с сервера до воды
     public float MbitsZvoGroundToWaterSend { get; set; } // Отправка с сервера до воды в мегабитах
     public float MbitsZvoGroundToWaterRecv { get; set; } // Прием с сервера до воды в мегабитах
+    public bool RepeaterAlive { get; set; } // На связи ли ретранслятор
+    public byte QueueRepeaterSend { get; set; } // Очередь отправки пакетов с ретранслятора
+    public float MbitsRepeaterWaterToGroundRecv { get; set; } // Прием с воды на ретрансляторе в мегабитах
+    public float MbitsRepeaterGroundToWaterRecv { get; set; } // Прием с воды на ретрансляторе в мегабитах
+    public float QualityRepeaterWaterToGroundRecv { get; set; } // Прием с воды на ретрансляторе в мегабитах
+    public float QualityRepeaterGroundToWaterRecv { get; set; } // Прием с воды на ретрансляторе в мегабитах
     public float RollGrad { get; set; } // Угол наклона
     public float PitchGrad { get; set; } // Угол наклона
     public float YawGrad { get; set; } // Угол наклона

@@ -91,6 +91,12 @@ public class WebControllerGameObjects : ControllerBase
                 item.Telem.QueueZvoGroundToWaterSend = (byte)Math.Min(zvo.ApRadioSendQueue, 255);
                 item.Telem.MbitsZvoGroundToWaterSend = zvo.ApRadioBytesSend * 8.0f / 1_000_000.0f;
                 item.Telem.MbitsZvoGroundToWaterRecv = zvo.ApRadioBytesRecv * 8.0f / 1_000_000.0f;
+                item.Telem.RepeaterAlive = zvo.Repeater.Alive;
+                item.Telem.QueueRepeaterSend = (byte)Math.Min(zvo.Repeater.SendQueue, 255);
+                item.Telem.MbitsRepeaterGroundToWaterRecv = zvo.Repeater.GtoWbytesRecv * 8.0f / 1_000_000.0f;
+                item.Telem.MbitsRepeaterWaterToGroundRecv = zvo.Repeater.WtoGbytesRecv * 8.0f / 1_000_000.0f;
+                item.Telem.QualityRepeaterGroundToWaterRecv = zvo.Repeater.GtoWpacketsRecv / 10.0f;
+                item.Telem.QualityRepeaterWaterToGroundRecv = zvo.Repeater.WtoGpacketsRecv / 10.0f;
                 var jsonStr = JsonSerializer.Serialize(item.Telem);
                 return Ok(jsonStr);
             }
