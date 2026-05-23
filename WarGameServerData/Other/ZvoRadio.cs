@@ -461,6 +461,8 @@ public class ZvoRadio (string apIp, int apPort)
             //array[SeekStart + DataSizeXored + crc32.Length] = CRC8(crc32);
         }
     }
+
+    /*
     public static bool CompressZipIfSmall(byte[] data, out byte[] smaller)
     {
         using var msIn = new MemoryStream(data);
@@ -507,6 +509,7 @@ public class ZvoRadio (string apIp, int apPort)
             return [];
         }
     }
+    */
 
     public static byte CRC8(byte data)
     {

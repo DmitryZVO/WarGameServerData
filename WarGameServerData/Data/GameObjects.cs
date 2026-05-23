@@ -128,8 +128,10 @@ public class GameObjects
         var useZip = (dataZip[0] & 0b10000000) > 0;
         var type = (dataZip[1] & 0b11110000) >> 4;
         var id = dataZip[1] & 0b00001111;
+        if (packType < 0x10) return; // игнорируем пакеты от самого себя
 
-        var data = useZip ? ZvoRadio.DecompressZip(dataZip[2..]) : dataZip[2..];
+        //var data = useZip ? ZvoRadio.DecompressZip(dataZip[2..]) : dataZip[2..];
+        var data = dataZip[2..];
 
         // Находим или создаем новый игровой объект
         GameObject? obj;
