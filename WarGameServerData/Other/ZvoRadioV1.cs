@@ -157,7 +157,7 @@ public class ZvoRadioV1 (string apIp, int apPort)
             var data = result.Buffer;
             recvAll++;
 
-            if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
+            //if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
             if (data.Length < SeekStart + SizeDataCrc32)
             {
                 recvHeadBad++;
@@ -217,7 +217,7 @@ public class ZvoRadioV1 (string apIp, int apPort)
             var sender = result.RemoteEndPoint;
             var data = result.Buffer;
 
-            if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
+            //if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
             if (data.Length < SeekStart + SizeDataCrc32) continue; // Огрызок пакета
 
             var seek = 2;

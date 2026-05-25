@@ -227,7 +227,7 @@ public class ZvoRadio(string apIp, int apPort)
             var sender = result.RemoteEndPoint;
             var data = result.Buffer;
 
-            if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
+            //if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
             if (data.Length < 82) continue; // Огрызок пакета
 
             var seek = 2;
