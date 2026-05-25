@@ -171,6 +171,10 @@ public class ZvoRadio(string apIp, int apPort)
             }
 
             var chunk = new RadioChunk(dataChunk);
+
+            var packType = chunk.GetNormalData()[0] & 0b01111111;
+            if (packType < 0x10) continue; // это пакет от сервера, игнорируем
+
             if (chunk.Check != ChunkState.OK)
             {
                 recvHeadBad++;
@@ -178,8 +182,6 @@ public class ZvoRadio(string apIp, int apPort)
             }
             if (chunk.PacketIsValid)
             {
-                var packType = chunk.GetNormalData()[0] & 0b01111111;
-                if (packType < 0x10) continue; // это пакет от сервера, игнорируем
                 recvGood++;
             }
             else
