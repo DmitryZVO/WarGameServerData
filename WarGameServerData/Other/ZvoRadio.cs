@@ -155,7 +155,7 @@ public class ZvoRadio(string apIp, int apPort)
             var data = result.Buffer;
             recvAll++;
 
-            if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
+            //if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
             var dataChunk = data[..(PhySendPacketCrc32 ? ^4 : ^0)]; // чанк ZVO
 
             if (data[0] == 0b11010100 && data[1] == 0x71) // это пакет от ретранслятора
@@ -177,6 +177,8 @@ public class ZvoRadio(string apIp, int apPort)
                 continue;
             }
             if (chunk.PacketIsValid) recvGood++; else recvBad++;
+
+            //Console.WriteLine($"recv, packNumer={chunk.PacketNumber:0}, good={(chunk.PacketIsValid ? "YES":"NO")}");
 
             LastValidChunk ??= chunk;
 
