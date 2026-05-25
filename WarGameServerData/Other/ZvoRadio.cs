@@ -131,7 +131,7 @@ public class ZvoRadio (string apIp, int apPort)
         while (!_ct.IsCancellationRequested)
         {
             await Task.Delay(1000, _ct);
-            if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: PacketsSend: [{sendAll:0}], AP_SEND={ApRadioPacketsSend:0} | PacketsRecv all/badH: [{recvAll:0}/{recvHeadBad:0}], AP_RECV={ApRadioPacketsRecv:0} | good/badData: [{recvGood:0}/{recvBad:0}] ({(1.0f - recvBad / (float)recvAll) * 100.0:0.00}%), recvRest={recvRest:0} (+{recvRest / (float)recvAll * 100.0:0.00}%)");
+            //if (PrintLog) Console.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffff} ZvoRadio: PacketsSend: [{sendAll:0}], AP_SEND={ApRadioPacketsSend:0} | PacketsRecv all/badH: [{recvAll:0}/{recvHeadBad:0}], AP_RECV={ApRadioPacketsRecv:0} | good/badData: [{recvGood:0}/{recvBad:0}] ({(1.0f - recvBad / (float)recvAll) * 100.0:0.00}%), recvRest={recvRest:0} (+{recvRest / (float)recvAll * 100.0:0.00}%)");
             recvAll = 0;
             recvHeadBad = 0;
             recvBad = 0;
@@ -345,7 +345,7 @@ public class ZvoRadio (string apIp, int apPort)
             var lenData = BitConverter.ToUInt16(data, 6);
             if (data.Length != SeekStart + (SizeRoundedData(lenData) / SizeBlocForkXor) * BigSizeBlockXor + DataCrc32SizeXored)
             {
-                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_ERROR, len={data.Length}!={SeekStart + lenData * 2}");
+                if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_ERROR, len={data.Length}!={SeekStart + lenData * 2}\n");
                 Check = ChunkState.ErrorSize;
                 return;
             }
@@ -358,17 +358,17 @@ public class ZvoRadio (string apIp, int apPort)
 
             if (array[1] != 0x70)
             {
-                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, ZVO_ERROR");
+                if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, ZVO_ERROR\n");
                 Check = ChunkState.ErrorZvo;
                 return;
             }
             if (!CRC16(array[..SizeHeader]).SequenceEqual(array[SizeHeader..SeekStart]))
             {
-                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, CRC_ERROR");
+                if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, CRC_ERROR\n");
                 Check = ChunkState.ErrorHeaderCrc;
                 return;
             }
-            //if (PrintLog) Console.WriteLine(" OK");
+            //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, OK");
         }
 
         public bool DataCrc32Check() // +
