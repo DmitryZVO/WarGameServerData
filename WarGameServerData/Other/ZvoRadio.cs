@@ -452,7 +452,7 @@ public class ZvoRadio(string apIp, int apPort)
         {
             if (data.Length < SizeFull)
             {
-                if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_PACKET_ERROR, len={data.Length}!={SizeFull}\n");
+                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_PACKET_ERROR, len={data.Length}!={SizeFull}\n");
                 Check = ChunkState.ErrorSize;
                 return;
             }
@@ -463,7 +463,7 @@ public class ZvoRadio(string apIp, int apPort)
 
             if (array[1] != 0x70)
             {
-                if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, ZVO_ERROR\n");
+                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, ZVO_ERROR\n");
                 Check = ChunkState.ErrorZvo;
                 return;
             }
@@ -472,7 +472,7 @@ public class ZvoRadio(string apIp, int apPort)
 
             if (!DynamicHeaderIsValid(0))
             {
-                if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, HEADER_CRC_ERROR\n");
+                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, HEADER_CRC_ERROR\n");
                 Check = ChunkState.ErrorHeaderCrc;
                 return;
             }
@@ -480,7 +480,7 @@ public class ZvoRadio(string apIp, int apPort)
             var lenData = BitConverter.ToUInt16(array, 6);
             if (lenData > SizeMacroBlock * 2) // Размер пакета не может быть более двух макроблоков
             {
-                if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_DATA_ERROR, len={lenData}>{SizeMacroBlock * 2}\n");
+                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_DATA_ERROR, len={lenData}>{SizeMacroBlock * 2}\n");
                 Check = ChunkState.ErrorSize;
                 return;
             }
