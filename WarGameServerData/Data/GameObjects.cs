@@ -204,6 +204,7 @@ public class GameObjects
                     obj.Telem.QueueZvoWaterToGroundSend = data[seek]; seek += 1;
                     obj.Telem.MbitsZvoWaterToGroundSend = BitConverter.ToUInt16(data, seek) / 1000.0f; seek += 2;
                     obj.Telem.MbitsZvoWaterToGroundRecv = BitConverter.ToUInt16(data, seek) / 1000.0f; seek += 2;
+                    obj.Telem.CodecMode = data[seek]; seek += 1; // Тип кодека видео
                     return;
                 }
             case 1 when packType == 0x12: // пакет запроса перезаписи RC каналов
@@ -500,6 +501,7 @@ public class H264ChunkDecoder
 
             if (dataArr[0] == 0x00 && dataArr[1] == 0x00 && dataArr[2] == 0x00 && dataArr[3] == 0x01) // это H264
             {
+                
                 var rgb = new RgbImage(ImageFormat.Rgb, BlockSize.Width, BlockSize.Height);
                 if (_decoder.Decode(dataArr, 0, dataArr.Length, true, out var state, ref rgb) == true)
                 {
@@ -599,6 +601,7 @@ public class GameObjectTelem // Параметры телеметрии
     public byte[] CanEngineBits { get; set; } = new byte[5]; // статусы движка
     public ulong AliveCheck { get; set; } // статусы компонентов устройства
     public ulong EnableCheck { get; set; } // статусы использования/включения устройства
+    public byte CodecMode { get; set; } = 0; // Тип кодека видео
     [JsonIgnore] public int MBitServerInBytesCounter { get; set; } // Счетчик приема данных в байтах
     [JsonIgnore] public int MBitServerOutBytesCounter { get; set; } // Счетчик передачи данных в байтах
     [JsonIgnore] public bool UseMesh { get; set; } // Использование MESH связи
