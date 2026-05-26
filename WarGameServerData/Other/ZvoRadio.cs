@@ -18,9 +18,7 @@ public class ZvoRadio(string apIp, int apPort)
     public const int SizeHeaderAndMacroBlockAndCrc32 = SizeHeaderDynamicAndCrc32 + SizeMacroBlockAndCrc32;  // Размер заголовка + CRC32 + макроблок + CRC32
     public const int SizeFull = SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32 * MacroBlocksCount;  // ПОЛНЫЙ РАЗМЕР ПАКЕТА
     public const bool PhySendPacketCrc32 = true; // Есть ли в конце пакета FCS_CRC
-    public List<RadioChunk> PacketsVideoRecv = [];
 
-    public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
     public ulong ApLanPacketsSend { get; private set; }
     public ulong ApLanPacketsRecv { get; private set; }
     public ulong ApRadioPacketsSend { get; private set; }
@@ -31,10 +29,12 @@ public class ZvoRadio(string apIp, int apPort)
     public ulong ApRadioBytesRecv { get; private set; }
     public ulong ApLanSendQueue { get; private set; }
     public ulong ApRadioSendQueue { get; private set; }
-    public RadioRepeater Repeater = new();
+
+    public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
+    public readonly RadioRepeater Repeater = new(); // ретранслятор
 
     private int recvGood, recvBad, recvHeadBad, recvAll, recvRest, sendAll;
-    //private RadioChunk? LastValidChunk; // Последний успешно принятый чанк
+    private readonly List<RadioChunk> PacketsVideoRecv = [];
 
     private readonly List<byte[]> RadioHeadersMaxRange = [];
     private readonly List<byte[]> RadioHeadersVideoEL = [];
@@ -190,10 +190,6 @@ public class ZvoRadio(string apIp, int apPort)
 
             recvGood++;
 
-            //Console.WriteLine($"recv, packNumer={chunk.PacketNumber:0}, good={(chunk.PacketIsValid ? "YES":"NO")}");
-
-            //LastValidChunk ??= chunk;
-
             // Пакеты с видео требуют последовательной обработки
             if (packType == 0x18)
             {
@@ -209,37 +205,10 @@ public class ZvoRadio(string apIp, int apPort)
                     //Console.WriteLine($"recv video packet {pack.PacketNumber:0}, Q={PacketsVideoRecv.Count:0}"); // это пакеты с видео
                 }
             }
-            else // для не пакетов с видео обрабатывается ВСЕ (т.к. это телеметрия) и повторы и дубли
+            else // для пакетов не с видео обрабатывается ВСЕ (т.к. это телеметрия) и повторы и дубли
             {
                 _ = OnNewPacketAsync.Invoke(chunk.GetNormalData());
             }
-
-            /*
-            // Остальные пакеты шлем как придут вместе с повторами
-            if (chunk.PacketNumber == LastValidChunk.PacketNumber) // Это повтор
-            {
-                if (LastValidChunk.PacketIsValid) continue; // Игнорируем повторы при прошлом валидном пакете 
-                if (chunk.PacketIsValid)
-                {
-                    LastValidChunk = chunk;
-                    recvRest++; // Если восстановили - увечиливаем счетчик
-                }
-                else
-                {
-                    //Console.WriteLine("");
-                }
-            }
-            else // Пришел новый пакет, пора отправлять старый
-            {
-                if (LastValidChunk.PacketIsValid) // Если пакет валиден - отправляем!
-                {
-                    if (LastValidChunk.PacketNumber >= chunk.PacketNumber) Console.WriteLine($"recv non video packet {LastValidChunk.PacketNumber:0}"); // это пакеты не с видео
-                    _ = OnNewPacketAsync.Invoke(LastValidChunk.GetNormalData());
-                    if (PacetRecvs.Count > 10) PacetRecvs.Remove(PacetRecvs.First()); // Удаляем отосланный пакет из списка
-                }
-                LastValidChunk = chunk;
-            }
-            */
         }
     }
 
@@ -249,10 +218,10 @@ public class ZvoRadio(string apIp, int apPort)
         while (!_ct.IsCancellationRequested)
         {
             var result = await connect.ReceiveAsync(_ct);
-            //var sender = result.RemoteEndPoint;
+            var sender = result.RemoteEndPoint;
             var data = result.Buffer;
 
-            //if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
+            if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
             if (data.Length < 82) continue; // Огрызок пакета
 
             var seek = 2;
