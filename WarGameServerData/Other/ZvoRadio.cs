@@ -199,7 +199,15 @@ public class ZvoRadio(string apIp, int apPort)
             {
                 if (PacketsVideoRecv.Any(x => x.PacketNumber == chunk.PacketNumber)) continue; // Такой пакет уже был
                 PacketsVideoRecv.Add(chunk);
-                Console.WriteLine($"recv video packet {chunk.PacketNumber:0}"); // это пакеты с видео
+                PacketsVideoRecv.Sort((a, b) => a.PacketNumber - b.PacketNumber);
+                if (PacketsVideoRecv.Count > 10) // более 10 пакетов - уже начинаем отправку
+                {
+                    var pack = PacketsVideoRecv.First();
+                    PacketsVideoRecv.RemoveAll(x => x.PacketNumber == pack.PacketNumber); // удаляем все дубли
+                    _ = OnNewPacketAsync.Invoke(pack.GetNormalData()); // отправляем пакет на исполнение
+                    PacketsVideoRecv.RemoveAll(x => x.PacketNumber > 65000); // удаляем все старые пакеты на переходе более 65000
+                    //Console.WriteLine($"recv video packet {pack.PacketNumber:0}, Q={PacketsVideoRecv.Count:0}"); // это пакеты с видео
+                }
             }
             else // для не пакетов с видео обрабатывается ВСЕ (т.к. это телеметрия) и повторы и дубли
             {
