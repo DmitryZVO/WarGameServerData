@@ -130,8 +130,8 @@ public class GameObjects
         var id = dataZip[1] & 0b00001111;
         if (packType < 0x10) return; // игнорируем пакеты от самого себя
 
-        //var data = useZip ? ZvoRadio.DecompressZip(dataZip[2..]) : dataZip[2..];
-        var data = dataZip[2..];
+        var data = useZip ? ZvoRadio.DecompressZip(dataZip[2..]) : dataZip[2..];
+        //var data = dataZip[2..];
 
         // Находим или создаем новый игровой объект
         GameObject? obj;
@@ -492,28 +492,73 @@ public class H264ChunkDecoder
         lock (this)
         {
             var dataArr = UdpFrame.ToArray();
-            if (dataArr.Length <= 0)
+            if (dataArr.Length <= 4)
             {
                 UdpFrame = new MemoryStream();
                 return;
             }
 
-            var rgb = new RgbImage(ImageFormat.Rgb, BlockSize.Width, BlockSize.Height);
-            if (_decoder.Decode(dataArr, 0, dataArr.Length, true, out var state, ref rgb) == true)
+            if (dataArr[0] == 0x00 && dataArr[1] == 0x00 && dataArr[2] == 0x00 && dataArr[3] == 0x01) // это H264
             {
+                var rgb = new RgbImage(ImageFormat.Rgb, BlockSize.Width, BlockSize.Height);
+                if (_decoder.Decode(dataArr, 0, dataArr.Length, true, out var state, ref rgb) == true)
+                {
+                    lock (FrameChunk)
+                    {
+                        FrameChunk.Dispose();
+                        FrameChunk = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, rgb.GetBytes());
+                        LastUpdate = DateTime.Now;
+                    }
+                    //Console.WriteLine(" OK!");
+                }
+                else
+                {
+                    //Console.WriteLine(" DECODE ERROR!");
+                }
+                rgb.Dispose();
+            }
+            else if (dataArr[0] == 0xff && dataArr[1] == 0xd8) // это JPEG
+            {
+                using var mat = Cv2.ImDecode(dataArr, ImreadModes.Unchanged);
+                Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
+                Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
                 lock (FrameChunk)
                 {
                     FrameChunk.Dispose();
-                    FrameChunk = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, rgb.GetBytes());
+                    FrameChunk = mat.Clone();
                     LastUpdate = DateTime.Now;
                 }
-                //Console.WriteLine(" OK!");
+            }
+            else if (dataArr[0] == 0x77 && dataArr[1] == 0x77) // это битовая маска
+            {
+                var bits = dataArr[2..];
+                var matBytes = new byte[bits.Length * 8];
+                //var mat = new Mat(BlockSize.Height / 4, BlockSize.Width / 4, MatType.CV_8UC1);
+                for (var i=0; i<bits.Length; i++)
+                {
+                    matBytes[i * 8 + 0] = (byte)((bits[i] & 0b00000001) > 0 ? 255 : 0);
+                    matBytes[i * 8 + 1] = (byte)((bits[i] & 0b00000010) > 0 ? 255 : 0);
+                    matBytes[i * 8 + 2] = (byte)((bits[i] & 0b00000100) > 0 ? 255 : 0);
+                    matBytes[i * 8 + 3] = (byte)((bits[i] & 0b00001000) > 0 ? 255 : 0);
+                    matBytes[i * 8 + 4] = (byte)((bits[i] & 0b00010000) > 0 ? 255 : 0);
+                    matBytes[i * 8 + 5] = (byte)((bits[i] & 0b00100000) > 0 ? 255 : 0);
+                    matBytes[i * 8 + 6] = (byte)((bits[i] & 0b01000000) > 0 ? 255 : 0);
+                    matBytes[i * 8 + 7] = (byte)((bits[i] & 0b10000000) > 0 ? 255 : 0);
+                }
+                using var mat = Mat.FromPixelData(BlockSize.Height / 4, BlockSize.Width / 4, MatType.CV_8UC1, matBytes);
+                Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
+                Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
+                lock (FrameChunk)
+                {
+                    FrameChunk.Dispose();
+                    FrameChunk = mat.Clone();
+                    LastUpdate = DateTime.Now;
+                }
             }
             else
             {
-                //Console.WriteLine(" DECODE ERROR!");
+
             }
-            rgb.Dispose();
             UdpFrame = new MemoryStream();
         }
     }

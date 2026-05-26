@@ -1,4 +1,5 @@
 ﻿using System.Buffers.Binary;
+using System.IO.Compression;
 using System.Net.Sockets;
 
 namespace WarGameServerData.Other;
@@ -529,5 +530,51 @@ public class ZvoRadio(string apIp, int apPort)
 
         crc ^= 0xFFFFFFFF;
         return BitConverter.GetBytes(crc);
+    }
+    public static bool CompressZipIfSmall(byte[] data, out byte[] smaller)
+    {
+        using var msIn = new MemoryStream(data);
+        using var msOut = new MemoryStream();
+        using (var ds = new DeflateStream(msOut, CompressionLevel.SmallestSize))
+        {
+            msIn.CopyTo(ds);
+        }
+        var zip = msOut.ToArray();
+        if (zip.Length < data.Length)
+        {
+            smaller = zip;
+            return true;
+        }
+        smaller = data;
+        return false;
+    }
+
+    public static byte[] CompressZip(byte[] data)
+    {
+        using var msIn = new MemoryStream(data);
+        using var msOut = new MemoryStream();
+        using (var ds = new DeflateStream(msOut, CompressionLevel.SmallestSize))
+        {
+            msIn.CopyTo(ds);
+        }
+        return msOut.ToArray();
+    }
+
+    public static byte[] DecompressZip(byte[] dataZip)
+    {
+        try
+        {
+            using var msIn = new MemoryStream(dataZip);
+            using var msOut = new MemoryStream();
+            using (var ds = new DeflateStream(msIn, CompressionMode.Decompress))
+            {
+                ds.CopyTo(msOut);
+            }
+            return msOut.ToArray();
+        }
+        catch
+        {
+            return [];
+        }
     }
 }
