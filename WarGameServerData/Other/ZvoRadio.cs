@@ -10,7 +10,7 @@ public class ZvoRadio(string apIp, int apPort)
     public const int SizeCrc32 = 4; // Размер CRC32 блока данных
     public const int SizeHeaderStatic = 4; // Размер заголовка (не изменяемая часть)
     public const int SizeHeaderDynamic = 4; // Размер заголовка (изменяемая часть)
-    public const int SizeMacroBlock = 100; // Размер макроблока БЕЗ CRC32
+    public const int SizeMacroBlock = 200; // Размер макроблока БЕЗ CRC32
     public const int MacroBlocksCount = 3; // Кол-во макро блоков A[0] + B[1] + XOR(A^B)[2] = 3
 
     public const int SizeHeaderDynamicAndCrc32 = SizeHeaderDynamic + SizeCrc32;  // Размер динамической части заголовка + CRC32
@@ -18,6 +18,7 @@ public class ZvoRadio(string apIp, int apPort)
     public const int SizeHeaderAndMacroBlockAndCrc32 = SizeHeaderDynamicAndCrc32 + SizeMacroBlockAndCrc32;  // Размер заголовка + CRC32 + макроблок + CRC32
     public const int SizeFull = SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32 * MacroBlocksCount;  // ПОЛНЫЙ РАЗМЕР ПАКЕТА
     public const bool PhySendPacketCrc32 = true; // Есть ли в конце пакета FCS_CRC
+    public List<RadioChunk> PacketsVideoRecv = [];
 
     public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
     public ulong ApLanPacketsSend { get; private set; }
@@ -33,7 +34,7 @@ public class ZvoRadio(string apIp, int apPort)
     public RadioRepeater Repeater = new();
 
     private int recvGood, recvBad, recvHeadBad, recvAll, recvRest, sendAll;
-    private RadioChunk? LastValidChunk; // Последний успешно принятый чанк
+    //private RadioChunk? LastValidChunk; // Последний успешно принятый чанк
 
     private readonly List<byte[]> RadioHeadersMaxRange = [];
     private readonly List<byte[]> RadioHeadersVideoEL = [];
@@ -191,8 +192,22 @@ public class ZvoRadio(string apIp, int apPort)
 
             //Console.WriteLine($"recv, packNumer={chunk.PacketNumber:0}, good={(chunk.PacketIsValid ? "YES":"NO")}");
 
-            LastValidChunk ??= chunk;
+            //LastValidChunk ??= chunk;
 
+            // Пакеты с видео требуют последовательной обработки
+            if (packType == 0x18)
+            {
+                if (PacketsVideoRecv.Any(x => x.PacketNumber == chunk.PacketNumber)) continue; // Такой пакет уже был
+                PacketsVideoRecv.Add(chunk);
+                Console.WriteLine($"recv video packet {chunk.PacketNumber:0}"); // это пакеты с видео
+            }
+            else // для не пакетов с видео обрабатывается ВСЕ (т.к. это телеметрия) и повторы и дубли
+            {
+                _ = OnNewPacketAsync.Invoke(chunk.GetNormalData());
+            }
+
+            /*
+            // Остальные пакеты шлем как придут вместе с повторами
             if (chunk.PacketNumber == LastValidChunk.PacketNumber) // Это повтор
             {
                 if (LastValidChunk.PacketIsValid) continue; // Игнорируем повторы при прошлом валидном пакете 
@@ -210,11 +225,13 @@ public class ZvoRadio(string apIp, int apPort)
             {
                 if (LastValidChunk.PacketIsValid) // Если пакет валиден - отправляем!
                 {
+                    if (LastValidChunk.PacketNumber >= chunk.PacketNumber) Console.WriteLine($"recv non video packet {LastValidChunk.PacketNumber:0}"); // это пакеты не с видео
                     _ = OnNewPacketAsync.Invoke(LastValidChunk.GetNormalData());
+                    if (PacetRecvs.Count > 10) PacetRecvs.Remove(PacetRecvs.First()); // Удаляем отосланный пакет из списка
                 }
                 LastValidChunk = chunk;
             }
-
+            */
         }
     }
 
@@ -224,7 +241,7 @@ public class ZvoRadio(string apIp, int apPort)
         while (!_ct.IsCancellationRequested)
         {
             var result = await connect.ReceiveAsync(_ct);
-            var sender = result.RemoteEndPoint;
+            //var sender = result.RemoteEndPoint;
             var data = result.Buffer;
 
             //if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи

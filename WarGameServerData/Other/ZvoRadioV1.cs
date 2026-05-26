@@ -214,7 +214,7 @@ public class ZvoRadioV1 (string apIp, int apPort)
         while (!_ct.IsCancellationRequested)
         {
             var result = await connect.ReceiveAsync(_ct);
-            var sender = result.RemoteEndPoint;
+            //var sender = result.RemoteEndPoint;
             var data = result.Buffer;
 
             //if (!sender.Address.ToString().Equals(apIp)) continue; // Пакет не от точки связи
