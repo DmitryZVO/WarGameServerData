@@ -521,16 +521,23 @@ public class H264ChunkDecoder
             }
             else if (dataArr[0] == 0xff && dataArr[1] == 0xd8) // это JPEG
             {
-                using var mat = Cv2.ImDecode(dataArr, ImreadModes.Unchanged);
-                Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
-                using var em = new Mat(mat.Rows, mat.Cols, MatType.CV_8UC1, Scalar.Black);
-                Cv2.Merge([em, mat, em], mat);
-                //Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
-                lock (FrameChunk)
+                try
                 {
-                    FrameChunk.Dispose();
-                    FrameChunk = mat.Clone();
-                    LastUpdate = DateTime.Now;
+                    using var mat = Cv2.ImDecode(dataArr, ImreadModes.Unchanged);
+                    Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
+                    using var em = new Mat(mat.Rows, mat.Cols, MatType.CV_8UC1, Scalar.Black);
+                    Cv2.Merge([em, mat, em], mat);
+                    //Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
+                    lock (FrameChunk)
+                    {
+                        FrameChunk.Dispose();
+                        FrameChunk = mat.Clone();
+                        LastUpdate = DateTime.Now;
+                    }
+                }
+                catch
+                {
+                    //
                 }
             }
             else if (dataArr[0] == 0x66 && dataArr[1] == 0x66) // это матрица ЦСЗ

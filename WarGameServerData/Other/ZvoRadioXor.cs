@@ -4,19 +4,22 @@ using System.Net.Sockets;
 
 namespace WarGameServerData.Other;
 
-public class ZvoRadio(string apIp, int apPort)
+public class ZvoRadioXor(string apIp, int apPort)
 {
     public static bool PrintLog => true;
 
     public const int SizeCrc32 = 4; // Размер CRC32 блока данных
     public const int SizeHeaderStatic = 4; // Размер заголовка (не изменяемая часть)
     public const int SizeHeaderDynamic = 4; // Размер заголовка (изменяемая часть)
-    public const int SizeMinimal = SizeHeaderStatic + SizeHeaderDynamic + SizeCrc32; // Размер заголовка (минимальный)
+    public const int SizeMacroBlock = 200; // Размер макроблока БЕЗ CRC32
+    public const int MacroBlocksCount = 3; // Кол-во макро блоков A[0] + B[1] + XOR(A^B)[2] = 3
 
     public const int SizeHeaderDynamicAndCrc32 = SizeHeaderDynamic + SizeCrc32;  // Размер динамической части заголовка + CRC32
+    public const int SizeMacroBlockAndCrc32 = SizeMacroBlock + SizeCrc32;  // Размер динамической части заголовка + CRC32
+    public const int SizeHeaderAndMacroBlockAndCrc32 = SizeHeaderDynamicAndCrc32 + SizeMacroBlockAndCrc32;  // Размер заголовка + CRC32 + макроблок + CRC32
+    public const int SizeFull = SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32 * MacroBlocksCount;  // ПОЛНЫЙ РАЗМЕР ПАКЕТА
     public const bool PhySendPacketCrc32 = true; // Есть ли в конце пакета FCS_CRC
 
-    public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
     public ulong ApLanPacketsSend { get; private set; }
     public ulong ApLanPacketsRecv { get; private set; }
     public ulong ApRadioPacketsSend { get; private set; }
@@ -27,9 +30,12 @@ public class ZvoRadio(string apIp, int apPort)
     public ulong ApRadioBytesRecv { get; private set; }
     public ulong ApLanSendQueue { get; private set; }
     public ulong ApRadioSendQueue { get; private set; }
+
+    public Func<byte[], Task> OnNewPacketAsync { get; set; } = async delegate { }; // делегат при получении нового пакета
     public readonly RadioRepeater Repeater = new(); // ретранслятор
 
     private int recvGood, recvBad, recvHeadBad, recvAll, recvRest, sendAll;
+    private readonly List<RadioChunk> PacketsVideoRecv = [];
 
     private readonly List<byte[]> RadioHeadersMaxRange = [];
     private readonly List<byte[]> RadioHeadersVideoEL = [];
@@ -160,7 +166,7 @@ public class ZvoRadio(string apIp, int apPort)
                 continue;
             }
 
-            if (data.Length < SizeMinimal)
+            if (data.Length < SizeFull)
             {
                 recvHeadBad++;
                 continue; // Огрызок пакета
@@ -185,7 +191,25 @@ public class ZvoRadio(string apIp, int apPort)
 
             recvGood++;
 
-            _ = OnNewPacketAsync.Invoke(chunk.GetNormalData()); // Для лодки обрабатываются все пакеты и все повторы, т.к. это управление
+            // Пакеты с видео требуют последовательной обработки
+            if (packType == 0x18)
+            {
+                if (PacketsVideoRecv.Any(x => x.PacketNumber == chunk.PacketNumber)) continue; // Такой пакет уже был
+                PacketsVideoRecv.Add(chunk);
+                PacketsVideoRecv.Sort((a, b) => a.PacketNumber - b.PacketNumber);
+                if (PacketsVideoRecv.Count > 10) // более 10 пакетов - уже начинаем отправку
+                {
+                    var pack = PacketsVideoRecv.First();
+                    PacketsVideoRecv.RemoveAll(x => x.PacketNumber == pack.PacketNumber); // удаляем все дубли
+                    _ = OnNewPacketAsync.Invoke(pack.GetNormalData()); // отправляем пакет на исполнение
+                    PacketsVideoRecv.RemoveAll(x => x.PacketNumber > 65000); // удаляем все старые пакеты на переходе более 65000
+                    //Console.WriteLine($"recv video packet {pack.PacketNumber:0}, Q={PacketsVideoRecv.Count:0}"); // это пакеты с видео
+                }
+            }
+            else // для пакетов не с видео обрабатывается ВСЕ (т.к. это телеметрия) и повторы и дубли
+            {
+                _ = OnNewPacketAsync.Invoke(chunk.GetNormalData());
+            }
         }
     }
 
@@ -244,7 +268,7 @@ public class ZvoRadio(string apIp, int apPort)
         };
         if (!send.SetNormalData(data)) // Пишем нормальные данные
         {
-            //Console.WriteLine($"data ZVO size packet is BIG! len={data.Length:0}, max={SizeMacroBlock * 2:0}");
+            Console.WriteLine($"data ZVO size packet is BIG! len={data.Length:0}, max={SizeMacroBlock * 2:0}");
         }
 
         using var udp = new UdpClient();
@@ -285,6 +309,8 @@ public class ZvoRadio(string apIp, int apPort)
             sendAll++;
         }
 
+        //}
+        //if (PrintLog) Console.WriteLine(Convert.ToHexString(send.GetArray));
         PacketNumber++;
     }
 
@@ -297,49 +323,122 @@ public class ZvoRadio(string apIp, int apPort)
 
         public ushort PacketNumber { get { return BitConverter.ToUInt16(array, 4); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 4, 2); } }
         public ushort DataSizeOriginal { get { return BitConverter.ToUInt16(array, 6); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 6, 2); } }
-        public bool PacketIsValid { get { if (!DynamicHeaderIsValid(0)) return false; if (!DataIsValid()) return false; return true; } }
+        public bool PacketIsValid { get { if (!DynamicHeaderIsValid(0)) return false; if (!MacroBlockIsValid(0)) return false; if (!MacroBlockIsValid(1)) return false; return true; } }
         public byte[] Data => GetNormalData();
-        public byte[] GetArray => array[..(SizeMinimal + DataSizeOriginal + SizeCrc32)];
+        public byte[] GetArray => array[..SizeFull];
         public bool SetNormalData(byte[] data) // +
         {
-            // Заполняем CRC32 заголовока
-            Array.Copy(CRC32(array[SizeHeaderStatic..(SizeHeaderStatic + SizeHeaderDynamic)]), 0, array, SizeHeaderStatic + SizeHeaderDynamic, SizeCrc32); // записываем CRC32 в заголовок 0
+            if (data.Length > SizeMacroBlock * 2) return false; // Размер данных слишком большой для пакета
 
-            // Заполняем блок данных
-            Array.Copy(data, 0, array, SizeMinimal, data.Length);
-            var dataCrc32 = CRC32(data);
-            Array.Copy(dataCrc32, 0, array, SizeMinimal + data.Length, dataCrc32.Length);
+            Array.Copy(CRC32(array[SizeHeaderStatic..(SizeHeaderStatic + SizeHeaderDynamic)]), 0, array, SizeHeaderStatic + SizeHeaderDynamic, SizeCrc32); // записываем CRC32 в заголовок 0
+            var header = array[SizeHeaderStatic..(SizeHeaderStatic + SizeHeaderDynamicAndCrc32)];
+            Array.Copy(header, 0, array, SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32, header.Length); // Копируем заголовок во второй блок данных
+            Array.Copy(header, 0, array, SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32 * 2, header.Length); // Копируем заголовок во блок данных XOR
+
+            // Заполняем блок данных 0
+            var lenBlockData0 = Math.Min(data.Length, SizeMacroBlock);
+            if (lenBlockData0 > 0) Array.Copy(data, 0, array, SizeHeaderStatic + SizeHeaderDynamicAndCrc32, lenBlockData0);
+            var block0crc32 = CRC32(array[(SizeHeaderStatic + SizeHeaderDynamicAndCrc32)..(SizeHeaderStatic + SizeHeaderDynamicAndCrc32 + SizeMacroBlock)]);
+            Array.Copy(block0crc32, 0, array, SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32 - SizeCrc32, block0crc32.Length);
+
+            // Заполняем блок данных 1
+            var lenBlockData1 = Math.Min(data.Length - SizeMacroBlock, SizeMacroBlock);
+            if (lenBlockData1 > 0) Array.Copy(data, SizeMacroBlock, array, SizeHeaderStatic + SizeHeaderDynamicAndCrc32 + SizeHeaderAndMacroBlockAndCrc32, lenBlockData1);
+            var block1crc32 = CRC32(array[(SizeHeaderStatic + SizeHeaderDynamicAndCrc32 + SizeHeaderAndMacroBlockAndCrc32)..(SizeHeaderStatic + SizeHeaderDynamicAndCrc32 + SizeHeaderAndMacroBlockAndCrc32 + SizeMacroBlock)]);
+            Array.Copy(block1crc32, 0, array, SizeHeaderStatic + (SizeHeaderAndMacroBlockAndCrc32 * 2) - SizeCrc32, block1crc32.Length);
+
+            // Заполняем блок XOR
+            var data0 = array[(SizeHeaderStatic + SizeHeaderDynamicAndCrc32)..(SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32 - SizeCrc32)];
+            var data1 = array[(SizeHeaderStatic + SizeHeaderDynamicAndCrc32 + SizeHeaderAndMacroBlockAndCrc32)..(SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32 * 2 - SizeCrc32)];
+            for (var i = 0; i < SizeMacroBlock; i++)
+            {
+                array[SizeHeaderStatic + SizeHeaderDynamicAndCrc32 + SizeHeaderAndMacroBlockAndCrc32 * 2 + i] = (byte)(data0[i] ^ data1[i]);
+            }
+            var xorData = CRC32(array[(SizeHeaderStatic + SizeHeaderDynamicAndCrc32 + SizeHeaderAndMacroBlockAndCrc32 * 2)..(SizeHeaderStatic + SizeHeaderDynamicAndCrc32 + SizeHeaderAndMacroBlockAndCrc32 * 2 + SizeMacroBlock)]);
+            Array.Copy(xorData, 0, array, SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32 * 3 - SizeCrc32, xorData.Length);
             return true;
         }
 
         public byte[] GetNormalData()
         {
-            var data = new byte[DataSizeOriginal];
-            Array.Copy(array, SizeMinimal, data, 0, data.Length);
-            return data;
+            var data = new byte[SizeMacroBlock * 2];
+            Array.Copy(array, SizeHeaderStatic + SizeHeaderDynamicAndCrc32, data, 0, SizeMacroBlock);
+            Array.Copy(array, SizeHeaderStatic + SizeHeaderAndMacroBlockAndCrc32 + SizeHeaderDynamicAndCrc32, data, SizeMacroBlock, SizeMacroBlock);
+            return data[..DataSizeOriginal];
+        }
+        public void CheckAndRestorePacket() // Проверка и восстановление пакета (по необходимости)
+        {
+            RestoreDynamicHeader();
+            RestoreMacroBlock0();
+            RestoreMacroBlock1();
         }
         public bool DynamicHeaderIsValid(int block)
         {
-            var arr = GetDynamicHeaderAndCrc32();
+            var arr = GetDynamicHeaderAndCrc32(block);
             return CRC32(arr[..^SizeCrc32]).SequenceEqual(arr[SizeHeaderDynamic..]);
         }
-        private byte[] GetDynamicHeaderAndCrc32()
+        public bool MacroBlockIsValid(int block)
         {
-            var start = SizeHeaderStatic;
+            var arr = GetMacroBlockAndCrc32(block);
+            return CRC32(arr[..^SizeCrc32]).SequenceEqual(arr[SizeMacroBlock..]);
+        }
+        private byte[] GetDynamicHeaderAndCrc32(int block)
+        {
+            var start = SizeHeaderStatic + block * (SizeHeaderAndMacroBlockAndCrc32);
             var end = start + SizeHeaderDynamicAndCrc32;
             return array[start..end];
         }
-        public bool DataIsValid()
-        {
-            var arr = GetDataAndCrc32();
-            return CRC32(arr[..^SizeCrc32]).SequenceEqual(arr[^SizeCrc32..]);
-        }
 
-        private byte[] GetDataAndCrc32()
+        private byte[] GetMacroBlockAndCrc32(int block)
         {
-            var start = SizeMinimal;
-            var end = start + DataSizeOriginal + SizeCrc32;
+            var start = SizeHeaderStatic + block * (SizeHeaderDynamicAndCrc32 + SizeMacroBlockAndCrc32) + SizeHeaderDynamicAndCrc32;
+            var end = start + SizeMacroBlockAndCrc32;
             return array[start..end];
+        }
+        private void RestoreDynamicHeader()
+        {
+            if (DynamicHeaderIsValid(0)) return; // нулевой блок динамического заголовка валиден, незачем восстанавливать
+            for (var i = 1; i < MacroBlocksCount; i++)
+            {
+                if (DynamicHeaderIsValid(i)) // первый повтор динамического блока заголовка валиден, восстанавливаем из него
+                {
+                    Array.Copy(GetDynamicHeaderAndCrc32(i), 0, array, SizeHeaderStatic, SizeHeaderDynamicAndCrc32);
+                    break;
+                }
+            }
+            //if (DynamicHeaderIsValid(0)) Console.WriteLine($"packet {PacketNumber:0} Restore HEADER");// else Console.WriteLine($"packet {PacketNumber:0} NO RESTORE HEADER");
+        }
+        private void RestoreMacroBlock0()
+        {
+            if (MacroBlockIsValid(0)) return; // первый блок данных валиден, незачем восстанавливать
+            if (!MacroBlockIsValid(2)) return; // не возможно восстановить макроблок, т.к. XOR часть повреждена
+            if (!MacroBlockIsValid(1)) return; // не возможно восстановить макроблок, т.к. второй блок поврежден
+            var xor = GetMacroBlockAndCrc32(2); // данные XOR
+            var block1 = GetMacroBlockAndCrc32(1); // данные второго блока
+            var block0 = new byte[xor.Length]; // первый блок (восстановленный)
+            for (var i = 0; i < xor.Length - SizeCrc32; i++)
+            {
+                block0[i] = (byte)(xor[i] ^ block1[i]);
+            }
+            Array.Copy(CRC32(block0[..^SizeCrc32]), 0, block0, SizeMacroBlock, SizeCrc32);
+            Array.Copy(block0, 0, array, SizeHeaderStatic + SizeHeaderDynamicAndCrc32, block0.Length);
+            //if (MacroBlockIsValid(0)) Console.WriteLine($"packet {PacketNumber:0} Restore BLOCK0");// else Console.WriteLine($"packet {PacketNumber:0} NO RESTORE BLOCK0");
+        }
+        private void RestoreMacroBlock1()
+        {
+            if (MacroBlockIsValid(1)) return; // второй блок данных валиден, незачем восстанавливать
+            if (!MacroBlockIsValid(2)) return; // не возможно восстановить макроблок, т.к. XOR часть повреждена
+            if (!MacroBlockIsValid(0)) return; // не возможно восстановить макроблок, т.к. первый блок поврежден
+            var xor = GetMacroBlockAndCrc32(2); // данные XOR
+            var block0 = GetMacroBlockAndCrc32(0); // данные первого блока
+            var block1 = new byte[xor.Length]; // второй блок (восстановленный)
+            for (var i = 0; i < xor.Length - SizeCrc32; i++)
+            {
+                block1[i] = (byte)(xor[i] ^ block0[i]);
+            }
+            Array.Copy(CRC32(block1[..^SizeCrc32]), 0, block1, SizeMacroBlock, SizeCrc32);
+            Array.Copy(block1, 0, array, SizeHeaderStatic + SizeHeaderDynamicAndCrc32 + SizeHeaderAndMacroBlockAndCrc32, block1.Length);
+            //if (MacroBlockIsValid(1)) Console.WriteLine($"packet {PacketNumber:0} Restore BLOCK1");// else Console.WriteLine($"packet {PacketNumber:0} NO RESTORE BLOCK1");
         }
 
         public RadioChunk()
@@ -359,7 +458,7 @@ public class ZvoRadio(string apIp, int apPort)
 
         public RadioChunk(byte[] data)
         {
-            if (data.Length < SizeMinimal)
+            if (data.Length < SizeFull)
             {
                 //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_PACKET_ERROR, len={data.Length}!={SizeFull}\n");
                 Check = ChunkState.ErrorSize;
@@ -377,6 +476,8 @@ public class ZvoRadio(string apIp, int apPort)
                 return;
             }
 
+            CheckAndRestorePacket();
+
             if (!DynamicHeaderIsValid(0))
             {
                 //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, HEADER_CRC_ERROR\n");
@@ -385,12 +486,29 @@ public class ZvoRadio(string apIp, int apPort)
             }
 
             var lenData = BitConverter.ToUInt16(array, 6);
-            if (lenData > data.Length - SizeCrc32 - SizeMinimal)
+            if (lenData > SizeMacroBlock * 2) // Размер пакета не может быть более двух макроблоков
             {
                 //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_DATA_ERROR, len={lenData}>{SizeMacroBlock * 2}\n");
                 Check = ChunkState.ErrorSize;
                 return;
             }
+
+            /*
+            if (!MacroBlockIsValid(0))
+            {
+                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, BLOCK_0_CRC_ERROR\n");
+                Check = ChunkState.ErrorDataCrc;
+                return;
+            }
+            if (!MacroBlockIsValid(1))
+            {
+                //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, BLOCK_1_CRC_ERROR\n");
+                Check = ChunkState.ErrorDataCrc;
+                return;
+            }
+            */
+
+            //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, OK");
         }
     }
 
