@@ -144,7 +144,7 @@ public class ZvoRadio(string apIp, int apPort)
 
     public async void ThreadRecvAsync()
     {
-        var _lastPacket = DateTime.MinValue;
+        var _lastVideoPacket = DateTime.MinValue;
 
         var connect = new UdpClient(apPort);
         while (!_ct.IsCancellationRequested)
@@ -202,11 +202,11 @@ public class ZvoRadio(string apIp, int apPort)
                     PacketsVideoRecv.RemoveAll(x => x.PacketNumber > 65000); // удаляем все старые пакеты на переходе более 65000
                     //Console.WriteLine($"recv video packet {pack.PacketNumber:0}, Q={PacketsVideoRecv.Count:0}"); // это пакеты с видео
                 }
-                _lastPacket = DateTime.Now;
+                _lastVideoPacket = DateTime.Now;
             }
             else // для пакетов не с видео обрабатывается ВСЕ (т.к. это телеметрия) и повторы и дубли
             {
-                if ((DateTime.Now - _lastPacket).TotalMilliseconds > 3000)
+                if ((DateTime.Now - _lastVideoPacket).TotalMilliseconds > 3000)
                 {
                     PacketsVideoRecv.Clear();
                 }
