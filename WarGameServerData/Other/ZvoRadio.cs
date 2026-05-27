@@ -397,7 +397,7 @@ public class ZvoRadio(string apIp, int apPort)
                 return;
             }
 
-            if (!DynamicHeaderIsValid())
+            if (DynamicHeaderIsValid() == false)
             {
                 //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, HEADER_CRC_ERROR\n");
                 Check = ChunkState.ErrorHeaderCrc;
@@ -405,7 +405,7 @@ public class ZvoRadio(string apIp, int apPort)
             }
 
             var lenData = BitConverter.ToUInt16(array, 6);
-            if (lenData > data.Length - SizeCrc32 - SizeMinimal)
+            if (lenData != data.Length - SizeCrc32 - SizeMinimal)
             {
                 //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)} LEN_DATA_ERROR, len={lenData}>{SizeMacroBlock * 2}\n");
                 Check = ChunkState.ErrorSize;
