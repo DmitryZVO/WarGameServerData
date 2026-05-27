@@ -523,7 +523,9 @@ public class H264ChunkDecoder
             {
                 using var mat = Cv2.ImDecode(dataArr, ImreadModes.Unchanged);
                 Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
-                Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
+                using var em = new Mat(mat.Rows, mat.Cols, MatType.CV_8UC1, Scalar.Black);
+                Cv2.Merge([em, mat, em], mat);
+                //Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
                 lock (FrameChunk)
                 {
                     FrameChunk.Dispose();
@@ -531,25 +533,48 @@ public class H264ChunkDecoder
                     LastUpdate = DateTime.Now;
                 }
             }
+            else if (dataArr[0] == 0x66 && dataArr[1] == 0x66) // это матрица ЦСЗ
+            {
+                var bits = dataArr[2..];
+                var matBytes = new byte[bits.Length * 4];
+                for (var i = 0; i < bits.Length; i++)
+                {
+                    matBytes[i * 4 + 0] = (byte)((bits[i] & 0b00000011) << 6);
+                    matBytes[i * 4 + 1] = (byte)((bits[i] & 0b00001100) << 4);
+                    matBytes[i * 4 + 2] = (byte)((bits[i] & 0b00110000) << 2);
+                    matBytes[i * 4 + 3] = (byte)((bits[i] & 0b11000000) << 0);
+                }
+                var mat = Mat.FromPixelData(BlockSize.Height / 8, BlockSize.Width / 8, MatType.CV_8UC1, matBytes);
+                Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
+                using var em = new Mat(mat.Rows, mat.Cols, MatType.CV_8UC1, Scalar.Black);
+                Cv2.Merge([em, mat, em], mat);
+                lock (FrameChunk)
+                {
+                    FrameChunk.Dispose();
+                    FrameChunk = mat.Clone();
+                    LastUpdate = DateTime.Now;
+                }
+                mat.Dispose();
+            }
             else if (dataArr[0] == 0x77 && dataArr[1] == 0x77) // это битовая маска
             {
                 var bits = dataArr[2..];
                 var matBytes = new byte[bits.Length * 8];
-                //var mat = new Mat(BlockSize.Height / 4, BlockSize.Width / 4, MatType.CV_8UC1);
                 for (var i=0; i<bits.Length; i++)
                 {
-                    matBytes[i * 8 + 0] = (byte)((bits[i] & 0b00000001) > 0 ? 255 : 0);
-                    matBytes[i * 8 + 1] = (byte)((bits[i] & 0b00000010) > 0 ? 255 : 0);
-                    matBytes[i * 8 + 2] = (byte)((bits[i] & 0b00000100) > 0 ? 255 : 0);
-                    matBytes[i * 8 + 3] = (byte)((bits[i] & 0b00001000) > 0 ? 255 : 0);
-                    matBytes[i * 8 + 4] = (byte)((bits[i] & 0b00010000) > 0 ? 255 : 0);
-                    matBytes[i * 8 + 5] = (byte)((bits[i] & 0b00100000) > 0 ? 255 : 0);
-                    matBytes[i * 8 + 6] = (byte)((bits[i] & 0b01000000) > 0 ? 255 : 0);
-                    matBytes[i * 8 + 7] = (byte)((bits[i] & 0b10000000) > 0 ? 255 : 0);
+                    matBytes[i * 8 + 0] = (byte)((bits[i] & 0b00000001) << 7);
+                    matBytes[i * 8 + 1] = (byte)((bits[i] & 0b00000010) << 6);
+                    matBytes[i * 8 + 2] = (byte)((bits[i] & 0b00000100) << 5);
+                    matBytes[i * 8 + 3] = (byte)((bits[i] & 0b00001000) << 4);
+                    matBytes[i * 8 + 4] = (byte)((bits[i] & 0b00010000) << 3);
+                    matBytes[i * 8 + 5] = (byte)((bits[i] & 0b00100000) << 2);
+                    matBytes[i * 8 + 6] = (byte)((bits[i] & 0b01000000) << 1);
+                    matBytes[i * 8 + 7] = (byte)((bits[i] & 0b10000000) << 0);
                 }
                 using var mat = Mat.FromPixelData(BlockSize.Height / 4, BlockSize.Width / 4, MatType.CV_8UC1, matBytes);
+                using var em = new Mat(mat.Rows, mat.Cols, MatType.CV_8UC1, Scalar.Black);
+                Cv2.Merge([em, mat, em], mat);
                 Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
-                Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
                 lock (FrameChunk)
                 {
                     FrameChunk.Dispose();
