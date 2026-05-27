@@ -198,7 +198,7 @@ public class ZvoRadio(string apIp, int apPort)
                 {
                     var pack = PacketsVideoRecv.First();
                     PacketsVideoRecv.RemoveAll(x => x.PacketNumber == pack.PacketNumber); // удаляем все дубли
-                    _ = OnNewPacketAsync.Invoke(pack.GetNormalData()); // отправляем пакет на исполнение
+                    await OnNewPacketAsync.Invoke(pack.GetNormalData()); // отправляем пакет на исполнение
                     PacketsVideoRecv.RemoveAll(x => x.PacketNumber > 65000); // удаляем все старые пакеты на переходе более 65000
                     //Console.WriteLine($"recv video packet {pack.PacketNumber:0}, Q={PacketsVideoRecv.Count:0}"); // это пакеты с видео
                 }
@@ -210,7 +210,7 @@ public class ZvoRadio(string apIp, int apPort)
                 {
                     PacketsVideoRecv.Clear();
                 }
-                _ = OnNewPacketAsync.Invoke(chunk.GetNormalData());
+                await OnNewPacketAsync.Invoke(chunk.GetNormalData());
             }
         }
     }
@@ -328,26 +328,20 @@ public class ZvoRadio(string apIp, int apPort)
         public byte[] GetArray => array[..(SizeMinimal + DataSizeOriginal + SizeCrc32)];
         public bool SetNormalData(byte[] data) // +
         {
-            // Заполняем CRC32 заголовока
             Array.Copy(CRC32(array[SizeHeaderStatic..(SizeHeaderStatic + SizeHeaderDynamic)]), 0, array, SizeHeaderStatic + SizeHeaderDynamic, SizeCrc32); // записываем CRC32 в заголовок 0
-
-            // Заполняем блок данных
             Array.Copy(data, 0, array, SizeMinimal, data.Length);
-            var dataCrc32 = CRC32(data);
-            Array.Copy(dataCrc32, 0, array, SizeMinimal + data.Length, dataCrc32.Length);
+            Array.Copy(CRC32(data), 0, array, SizeMinimal + data.Length, SizeCrc32);
             return true;
         }
 
         public byte[] GetNormalData()
         {
-            var data = new byte[DataSizeOriginal];
-            Array.Copy(array, SizeMinimal, data, 0, data.Length);
-            return data;
+            return array[SizeMinimal..(SizeMinimal + DataSizeOriginal)];
         }
         public bool DynamicHeaderIsValid()
         {
             var arr = GetDynamicHeaderAndCrc32();
-            return CRC32(arr[..^SizeCrc32]).SequenceEqual(arr[SizeHeaderDynamic..]);
+            return CRC32(arr[..SizeHeaderDynamic]).SequenceEqual(arr[SizeHeaderDynamic..]);
         }
         private byte[] GetDynamicHeaderAndCrc32()
         {
@@ -358,7 +352,7 @@ public class ZvoRadio(string apIp, int apPort)
         public bool DataIsValid()
         {
             var arr = GetDataAndCrc32();
-            return CRC32(arr[..^SizeCrc32]).SequenceEqual(arr[^SizeCrc32..]);
+            return CRC32(arr[..DataSizeOriginal]).SequenceEqual(arr[DataSizeOriginal..]);
         }
 
         private byte[] GetDataAndCrc32()

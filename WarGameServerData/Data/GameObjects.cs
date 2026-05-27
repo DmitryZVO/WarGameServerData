@@ -499,6 +499,8 @@ public class H264ChunkDecoder
                 return;
             }
 
+            using var em = new Mat(BlockSize.Height, BlockSize.Width, MatType.CV_8UC1, Scalar.Black);
+
             if (dataArr[0] == 0x00 && dataArr[1] == 0x00 && dataArr[2] == 0x00 && dataArr[3] == 0x01) // это H264
             {
                 
@@ -525,7 +527,6 @@ public class H264ChunkDecoder
                 {
                     using var mat = Cv2.ImDecode(dataArr, ImreadModes.Unchanged);
                     Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
-                    using var em = new Mat(mat.Rows, mat.Cols, MatType.CV_8UC1, Scalar.Black);
                     Cv2.Merge([em, mat, em], mat);
                     //Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
                     lock (FrameChunk)
@@ -543,6 +544,7 @@ public class H264ChunkDecoder
             else if (dataArr[0] == 0x66 && dataArr[1] == 0x66) // это матрица ЦСЗ
             {
                 var bits = dataArr[2..];
+                if (bits.Length != 160) Console.WriteLine($"bits len= {bits.Length}");
                 var matBytes = new byte[bits.Length * 4];
                 for (var i = 0; i < bits.Length; i++)
                 {
@@ -553,7 +555,6 @@ public class H264ChunkDecoder
                 }
                 var mat = Mat.FromPixelData(BlockSize.Height / 8, BlockSize.Width / 8, MatType.CV_8UC1, matBytes);
                 Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
-                using var em = new Mat(mat.Rows, mat.Cols, MatType.CV_8UC1, Scalar.Black);
                 Cv2.Merge([em, mat, em], mat);
                 lock (FrameChunk)
                 {
@@ -579,9 +580,8 @@ public class H264ChunkDecoder
                     matBytes[i * 8 + 7] = (byte)((bits[i] & 0b10000000) << 0);
                 }
                 using var mat = Mat.FromPixelData(BlockSize.Height / 4, BlockSize.Width / 4, MatType.CV_8UC1, matBytes);
-                using var em = new Mat(mat.Rows, mat.Cols, MatType.CV_8UC1, Scalar.Black);
-                Cv2.Merge([em, mat, em], mat);
                 Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
+                Cv2.Merge([em, mat, em], mat);
                 lock (FrameChunk)
                 {
                     FrameChunk.Dispose();
