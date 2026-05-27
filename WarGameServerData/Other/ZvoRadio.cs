@@ -411,6 +411,14 @@ public class ZvoRadio(string apIp, int apPort)
                 Check = ChunkState.ErrorSize;
                 return;
             }
+
+            //if (DataIsValid() == false)
+            //{
+            //    Check = ChunkState.ErrorDataCrc;
+            //    return;
+            //}
+
+            Check = ChunkState.OK;
         }
     }
 
