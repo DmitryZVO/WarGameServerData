@@ -30,6 +30,7 @@ public class ZvoRadio(string apIp, int apPort)
     public readonly RadioRepeater Repeater = new(); // ретранслятор
 
     private int recvGood, recvBad, recvHeadBad, recvAll, recvRest, sendAll;
+    private readonly List<RadioChunk> PacketsVideoRecv = [];
 
     private readonly List<byte[]> RadioHeadersMaxRange = [];
     private readonly List<byte[]> RadioHeadersVideoEL = [];
@@ -143,6 +144,8 @@ public class ZvoRadio(string apIp, int apPort)
 
     public async void ThreadRecvAsync()
     {
+        var _lastPacket = DateTime.MinValue;
+
         var connect = new UdpClient(apPort);
         while (!_ct.IsCancellationRequested)
         {
@@ -185,7 +188,30 @@ public class ZvoRadio(string apIp, int apPort)
 
             recvGood++;
 
-            _ = OnNewPacketAsync.Invoke(chunk.GetNormalData()); // Для лодки обрабатываются все пакеты и все повторы, т.к. это управление
+            // Пакеты с видео требуют последовательной обработки
+            if (packType == 0x18)
+            {
+                if (PacketsVideoRecv.Any(x => x.PacketNumber == chunk.PacketNumber)) continue; // Такой пакет уже был
+                PacketsVideoRecv.Add(chunk);
+                PacketsVideoRecv.Sort((a, b) => a.PacketNumber - b.PacketNumber);
+                if (PacketsVideoRecv.Count > 10) // более 10 пакетов - уже начинаем отправку
+                {
+                    var pack = PacketsVideoRecv.First();
+                    PacketsVideoRecv.RemoveAll(x => x.PacketNumber == pack.PacketNumber); // удаляем все дубли
+                    _ = OnNewPacketAsync.Invoke(pack.GetNormalData()); // отправляем пакет на исполнение
+                    PacketsVideoRecv.RemoveAll(x => x.PacketNumber > 65000); // удаляем все старые пакеты на переходе более 65000
+                    //Console.WriteLine($"recv video packet {pack.PacketNumber:0}, Q={PacketsVideoRecv.Count:0}"); // это пакеты с видео
+                }
+                _lastPacket = DateTime.Now;
+            }
+            else // для пакетов не с видео обрабатывается ВСЕ (т.к. это телеметрия) и повторы и дубли
+            {
+                if ((DateTime.Now - _lastPacket).TotalMilliseconds > 3000)
+                {
+                    PacketsVideoRecv.Clear();
+                }
+                _ = OnNewPacketAsync.Invoke(chunk.GetNormalData());
+            }
         }
     }
 
@@ -297,7 +323,7 @@ public class ZvoRadio(string apIp, int apPort)
 
         public ushort PacketNumber { get { return BitConverter.ToUInt16(array, 4); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 4, 2); } }
         public ushort DataSizeOriginal { get { return BitConverter.ToUInt16(array, 6); } set { Array.Copy(BitConverter.GetBytes(value), 0, array, 6, 2); } }
-        public bool PacketIsValid { get { if (!DynamicHeaderIsValid(0)) return false; if (!DataIsValid()) return false; return true; } }
+        public bool PacketIsValid { get { if (!DynamicHeaderIsValid()) return false; if (!DataIsValid()) return false; return true; } }
         public byte[] Data => GetNormalData();
         public byte[] GetArray => array[..(SizeMinimal + DataSizeOriginal + SizeCrc32)];
         public bool SetNormalData(byte[] data) // +
@@ -318,7 +344,7 @@ public class ZvoRadio(string apIp, int apPort)
             Array.Copy(array, SizeMinimal, data, 0, data.Length);
             return data;
         }
-        public bool DynamicHeaderIsValid(int block)
+        public bool DynamicHeaderIsValid()
         {
             var arr = GetDynamicHeaderAndCrc32();
             return CRC32(arr[..^SizeCrc32]).SequenceEqual(arr[SizeHeaderDynamic..]);
@@ -377,7 +403,7 @@ public class ZvoRadio(string apIp, int apPort)
                 return;
             }
 
-            if (!DynamicHeaderIsValid(0))
+            if (!DynamicHeaderIsValid())
             {
                 //if (PrintLog) Console.WriteLine($"{Convert.ToHexString(data)}, HEADER_CRC_ERROR\n");
                 Check = ChunkState.ErrorHeaderCrc;
