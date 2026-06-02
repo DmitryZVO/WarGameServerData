@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenCvSharp;
 using System.Net.Sockets;
 using System.Text.Json.Serialization;
+using WarGameServerData.Model;
 using WarGameServerData.Other;
 
 namespace WarGameServerData.Data;
@@ -13,7 +14,7 @@ public class GameObjects
 
     public async void SendRequestsAsync(CancellationToken ct = default)
     {
-        //Items.Add(new GameObject() { Ip="192.168.1.241"});
+        Items.Add(new GameObject() { Ip = "192.168.1.240", Id = 1, LastTime = DateTime.Now, Telem = new GameObjectTelem() { UseZvo = true } });
         while (!ct.IsCancellationRequested)
         {
             try
@@ -163,7 +164,7 @@ public class GameObjects
                     var seek = 0;
                     obj.LonX = BitConverter.ToSingle(data, seek); seek += 4; // LonX
                     obj.LatY = BitConverter.ToSingle(data, seek); seek += 4; // LatY
-                    obj.Angle = BitConverter.ToUInt16(data, seek) / 100.0f; seek += 2; // Угол поворота Yaw
+                    obj.Angle = (BitConverter.ToUInt16(data, seek)) / 100.0f; seek += 2; // Угол поворота Yaw
                     obj.Telem.YawGrad = obj.Angle;
                     obj.Telem.RollGrad = BitConverter.ToInt16(data, seek) / 100.0f; seek += 2; // Угол поворота Roll
                     obj.Telem.PitchGrad = BitConverter.ToInt16(data, seek) / 100.0f; seek += 2; // Угол поворота Pitch
@@ -269,13 +270,13 @@ public class GameObject
 
 public class CameraFrame
 {
-    public static readonly Size DefFrameToSend = new(1280, 704); // Размер кадря для пересылки на клиента
+    public static readonly Size DefFrameToSend = new(1280, 640); // Размер кадря для пересылки на клиента
     //public static readonly Size DefFrameToSend = new(960, 540); // Размер кадря для пересылки на клиента
     public static int MaxChunks => (DefFrameSizeH.Width / H264ChunkDecoder.BlockSize.Width) * (DefFrameSizeH.Height / H264ChunkDecoder.BlockSize.Height);
-    public static readonly Size DefFrameSizeH = new(1920, 1408); // Максимальный размер фрейма (High)
-    public static readonly Size DefFrameSizeM = new(1280, 704); // Максимальный размер фрейма (Medium)
-    public static readonly Size DefFrameSizeL = new(640, 448); // Максимальный размер фрейма (Low)
-    public static readonly Size DefFrameSizeExL = new(640, 192); // Максимальный размер фрейма (ExtraLow)
+    public static readonly Size DefFrameSizeH = new(320, 160); // Максимальный размер фрейма (High)
+    public static readonly Size DefFrameSizeM = new(256, 128); // Максимальный размер фрейма (Medium)
+    public static readonly Size DefFrameSizeL = new(192, 96); // Максимальный размер фрейма (Low)
+    public static readonly Size DefFrameSizeExL = new(128, 64); // Максимальный размер фрейма (ExtraLow)
     public int Fps { get; set; } // Частота входящих успешнодекодированных кадров
 
     public byte[] FrameToSend { get; set; } // Текущий собраный кадр (для отправки клиентам)
@@ -363,7 +364,8 @@ public class CameraFrame
                     1 => DefFrameSizeL,
                     _ => DefFrameSizeExL,
                 };
-                Cv2.Resize(Frame, res, sizeFrameSend);
+                Server.sr4.Upsample(Frame, res);
+                Cv2.Resize(res, res, DefFrameToSend);// sizeFrameSend);
                 FrameToSend = res.ToBytes(".jpeg");
                 res.Dispose();
             }
@@ -427,7 +429,7 @@ public class CameraFrame
 public class H264ChunkDecoder
 {
     public Mat FrameChunk = new();
-    public readonly static Size BlockSize = new(640, 64); // Должно быть кратно 16x16 (это минимальный блок кодирования h264 по умолчанию) 160x160 = 10x10 блоков, 80x80 = 5x5 блоков, 64x64 = 4x4 блока, 32x32 = 2x2 блока
+    public readonly static Size BlockSize = new(64, 32); // Должно быть кратно 16x16 (это минимальный блок кодирования h264 по умолчанию) 160x160 = 10x10 блоков, 80x80 = 5x5 блоков, 64x64 = 4x4 блока, 32x32 = 2x2 блока
 
     public int Number { get; } // Номер чанка
     public long UdpFrameNumber { get; set; } // Текущий номер кадра (для сборки)
@@ -527,7 +529,7 @@ public class H264ChunkDecoder
                 {
                     using var mat = Cv2.ImDecode(dataArr, ImreadModes.Unchanged);
                     Cv2.Resize(mat, mat, new Size(BlockSize.Width, BlockSize.Height));
-                    Cv2.Merge([em, mat, em], mat);
+                    //Cv2.Merge([em, mat, mat], mat);
                     //Cv2.CvtColor(mat, mat, ColorConversionCodes.GRAY2BGR);
                     lock (FrameChunk)
                     {

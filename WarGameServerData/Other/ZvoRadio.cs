@@ -306,6 +306,7 @@ public class ZvoRadio(string apIp, int apPort)
                 ms.Write(radio[0]); // Записываем заголовок Radiotap для инжектирования
             }
             ms.Write(send.GetArray); // Записываем оставшийся блок данных и CRC
+            //ms.Write(new byte[1300]); // КОСТЫЛЬ
             var d = ms.ToArray();
             await udp.SendAsync(d, apIp, apPort, _ct);
             sendAll++;
