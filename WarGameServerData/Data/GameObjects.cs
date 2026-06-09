@@ -15,7 +15,7 @@ public class GameObjects
 
     public async void SendRequestsAsync(CancellationToken ct = default)
     {
-        Items.Add(new GameObject() { Ip = "192.168.1.241", Id = 1, LastTime = DateTime.Now, Telem = new GameObjectTelem() { UseZvo = true } });
+        Items.Add(new GameObject() { Ip = "192.168.1.240", Id = 1, LastTime = DateTime.Now, Telem = new GameObjectTelem() { UseZvo = true } });
         while (!ct.IsCancellationRequested)
         {
             try
