@@ -1,6 +1,7 @@
 ﻿using H264Sharp;
 using Microsoft.Extensions.DependencyInjection;
 using OpenCvSharp;
+using OpenCvSharp.DnnSuperres;
 using System.Net.Sockets;
 using System.Text.Json.Serialization;
 using WarGameServerData.Model;
@@ -14,7 +15,7 @@ public class GameObjects
 
     public async void SendRequestsAsync(CancellationToken ct = default)
     {
-        Items.Add(new GameObject() { Ip = "192.168.1.240", Id = 1, LastTime = DateTime.Now, Telem = new GameObjectTelem() { UseZvo = true } });
+        Items.Add(new GameObject() { Ip = "192.168.1.241", Id = 1, LastTime = DateTime.Now, Telem = new GameObjectTelem() { UseZvo = true } });
         while (!ct.IsCancellationRequested)
         {
             try
@@ -223,12 +224,13 @@ public class GameObjects
                     var frameNumber = data[0]; // Номер кадра
                     var chunkNumber = BitConverter.ToUInt16(data, 2) & 0b0111111111111111; // Номер чанка-декодера
 
-                    var chunk = obj.CamFrames.ToList().Find(x => x.H264ChunkDecoders.Any(y => y.Number == chunkNumber))?.H264ChunkDecoders.Find(y=>y.Number == chunkNumber);
-                    if (chunk == null) return; // Чанк не найден
-                    chunk.ReadChunkPacket(data);
+                    var camera = obj.CamFrames.ToList().Find(x => x.H264ChunkDecoders.Exists(y => y.Number == chunkNumber));
+                    if (camera == null) return; // Чанк не найден
+                    camera.H264ChunkDecoders.Find(x=>x.Number == chunkNumber)!.ReadChunkPacket(data);
+                    //Console.WriteLine($"add chunk={chunkNumber:0}, camera={camera.Number:0}");
                     return;
                 }
-
+                 
             default:
                 return;
         }
@@ -285,6 +287,11 @@ public class CameraFrame
     public readonly int Number; // Номер камеры
     public readonly GameObject Object; // Игровой объект
 
+    public readonly DnnSuperResImpl sr2 = new();
+    public readonly DnnSuperResImpl sr3 = new();
+    public readonly DnnSuperResImpl sr4 = new();
+    public readonly DnnSuperResImpl sr8 = new();
+
     private Mat Frame { get; set; } // Текущий собраный кадр (для отправки клиентам)
 
     public CameraFrame(GameObject obj, int number)
@@ -294,6 +301,15 @@ public class CameraFrame
         Number = number;
         Object = obj;
         Frame = new Mat();
+
+        sr2.ReadModel(@"dnn\x2.pb");
+        sr2.SetModel("fsrcnn", 2);
+        sr3.ReadModel(@"dnn\x3.pb");
+        sr3.SetModel("fsrcnn", 3);
+        sr4.ReadModel(@"dnn\x4.pb");
+        sr4.SetModel("fsrcnn", 4);
+        sr8.ReadModel(@"dnn\x8.pb");
+        sr8.SetModel("lapsrn", 8);
 
         var config = Converter.GetCurrentConfig();
 
@@ -345,29 +361,23 @@ public class CameraFrame
                 for (var sx = 0; sx < sizeFrame.Width / H264ChunkDecoder.BlockSize.Width; sx++)
                 {
                     var chunk = H264ChunkDecoders[i].FrameChunk;
-                    i++;
 
                     lock (chunk)
                     {
                         if (chunk.IsDisposed || chunk.Empty()) continue;
-                        Cv2.CopyTo(chunk, Frame.SubMat(new Rect(sx * H264ChunkDecoder.BlockSize.Width, sy * H264ChunkDecoder.BlockSize.Height, H264ChunkDecoder.BlockSize.Width, H264ChunkDecoder.BlockSize.Height)));
+                        Cv2.CopyTo(chunk, Frame[new Rect(sx * chunk.Width, sy * chunk.Height, chunk.Width, chunk.Height)]);
+                        //Console.WriteLine($"write chunk={H264ChunkDecoders[i].Number} to {Number:0} camera");
                     }
+                    i++;
                 }
             }
             lock (FrameToSend)
             {
-                var res = new Mat();
-                var sizeFrameSend = Object.Telem.VideoQuality switch
-                {
-                    3 => DefFrameToSend,
-                    2 => DefFrameSizeM,
-                    1 => DefFrameSizeL,
-                    _ => DefFrameSizeExL,
-                };
-                Server.sr4.Upsample(Frame, res);
+                using var res = new Mat();
+                sr4.Upsample(Frame, res);
+                //res.SaveImage($"cam{Number:0}_frame{DateTime.Now.Ticks:0}.jpg");
                 Cv2.Resize(res, res, DefFrameToSend);// sizeFrameSend);
                 FrameToSend = res.ToBytes(".jpeg");
-                res.Dispose();
             }
         }
     }
@@ -513,6 +523,8 @@ public class H264ChunkDecoder
                     {
                         FrameChunk.Dispose();
                         FrameChunk = Mat.FromPixelData(rgb.Height, rgb.Width, MatType.CV_8UC3, rgb.GetBytes());
+                        //FrameChunk.SaveImage($"chunk{Number:0}_len{dataArr.Length}.jpg");
+                        //Console.WriteLine($"H264 chunk={Number:0} len={dataArr.Length} recv OK");
                         LastUpdate = DateTime.Now;
                     }
                     //Console.WriteLine(" OK!");
@@ -535,6 +547,7 @@ public class H264ChunkDecoder
                     {
                         FrameChunk.Dispose();
                         FrameChunk = mat.Clone();
+                        Console.WriteLine($"MJPEG chunk={Number:0} len={dataArr.Length} recv OK");
                         LastUpdate = DateTime.Now;
                     }
                 }
@@ -562,6 +575,7 @@ public class H264ChunkDecoder
                 {
                     FrameChunk.Dispose();
                     FrameChunk = mat.Clone();
+                    Console.WriteLine($"4bit chunk={Number:0} len={dataArr.Length} recv OK");
                     LastUpdate = DateTime.Now;
                 }
                 mat.Dispose();
@@ -588,6 +602,7 @@ public class H264ChunkDecoder
                 {
                     FrameChunk.Dispose();
                     FrameChunk = mat.Clone();
+                    Console.WriteLine($"1bit chunk={Number:0} len={dataArr.Length} recv OK");
                     LastUpdate = DateTime.Now;
                 }
             }
